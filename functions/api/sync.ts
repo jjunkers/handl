@@ -1,8 +1,20 @@
+// Cloudflare D1 types for the compiler
+interface D1Database {
+    prepare: (query: string) => any;
+    batch: (statements: any[]) => Promise<any>;
+}
+
+type PagesFunction<T = any> = (context: {
+    request: Request;
+    env: T;
+    next: () => Promise<Response>;
+}) => Promise<Response>;
+
 interface Env {
     DB: D1Database;
 }
 
-export const onRequestGet: PagesFunction<Env> = async (context) => {
+export const onRequestGet: PagesFunction<Env> = async (context: any) => {
     try {
         const url = new URL(context.request.url);
         const userId = url.searchParams.get("userId");
@@ -57,7 +69,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
     }
 };
 
-export const onRequestPost: PagesFunction<Env> = async (context) => {
+export const onRequestPost: PagesFunction<Env> = async (context: any) => {
     try {
         const { userId, carts, items, connections, users } = await context.request.json() as any;
 
@@ -162,7 +174,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         for (const conn of (connections || [])) {
             statements.push(
                 context.env.DB.prepare(`
-          INSERT OR IGNORE INTO user_connections (follower_id, followed_id)
+          INSERT OR REPLACE INTO user_connections (follower_id, followed_id)
           VALUES (?, ?)
         `).bind(conn.follower_id, conn.followed_id)
             );

@@ -1322,13 +1322,33 @@ function App() {
               allConnections.push({ follower_id: u.id, followed_id: targetId });
             });
           }
+          if (u.subscribers) {
+            u.subscribers.forEach(subId => {
+              allConnections.push({ follower_id: subId, followed_id: u.id });
+            });
+          }
         });
 
-        if (allConnections.length > 0) {
-          await handleSync({ connections: allConnections });
+        // VIGTIGT: Udled forbindelser fra kurvene! 
+        localCarts.forEach(cart => {
+          if (cart.userId && cart.userId !== currentUserId && !cart.userId.startsWith('private_')) {
+            allConnections.push({ follower_id: currentUserId, followed_id: cart.userId });
+          }
+        });
+
+        // Fjern dubletter
+        const uniqueConnections = allConnections.filter((conn, index, self) =>
+          index === self.findIndex((t) => (
+            t.follower_id === conn.follower_id && t.followed_id === conn.followed_id
+          ))
+        );
+
+        if (uniqueConnections.length > 0) {
+          console.log("Sender forbindelser:", uniqueConnections);
+          await handleSync({ connections: uniqueConnections });
         }
 
-        alert(`Migration færdig! ${localUsers.length} brugere, ${localCarts.length} kurve, ${allItems.length} varer og ${allConnections.length} forbindelser blev overført.`);
+        alert(`Migration færdig! ${localUsers.length} brugere, ${localCarts.length} kurve, ${allItems.length} varer og ${uniqueConnections.length} forbindelser blev overført.`);
         handleSync(); // Refresh efter migration
       } catch (e: any) {
         console.error("Migration fejlede", e);
