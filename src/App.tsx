@@ -33,7 +33,7 @@ function App() {
   const lastAdminAction = useRef(0);
   const [activeTab, setActiveTab] = useState<Tab>('welcome');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [version] = useState('v1.1.1');
+  const [version] = useState('v1.1.2');
 
   // Login view toggle
   const [isLoginView, setIsLoginView] = useState(false);
@@ -1062,131 +1062,168 @@ function App() {
   );
 
   // ─── RENDER: Butik ───
-  const renderShop = () => (
-    <div className="container">
-      <h2 style={{ marginBottom: '20px' }}>Butikker</h2>
+  const renderShop = () => {
+    // Filtrerede varer baseret på søgning eller valgt kategori
+    const baseItems = shopSearchQuery ? filteredTemplates : availableItems;
 
-      {/* Kurv-vælger */}
-      {visibleCarts.length > 1 && (
-        <div className="cart-selector">
-          {visibleCarts.map(c => (
-            <button key={c.id} className={`glass ${c.id === activeCartId ? 'btn-primary' : ''} `} onClick={() => setActiveCartId(c.id)}>
-              {c.name}
+    // Yderligere filtrering hvis man har valgt en specifik kategori (og ikke søger)
+    const filteredByCat = (!shopSearchQuery && newItemCat !== 'all')
+      ? baseItems.filter(i => i.category === newItemCat)
+      : baseItems;
+
+    // Gruppér varer
+    const grouped = filteredByCat.reduce((acc, item) => {
+      const catName = item.category || 'Andet';
+      if (!acc[catName]) acc[catName] = [];
+      acc[catName].push(item);
+      return acc;
+    }, {} as Record<string, Item[]>);
+
+    // Sortér kategorier
+    const sortedCategories = Object.keys(grouped).sort((a, b) => {
+      const indexA = categories.indexOf(a);
+      const indexB = categories.indexOf(b);
+      if (indexA === -1) return 1;
+      if (indexB === -1) return -1;
+      return indexA - indexB;
+    });
+
+    return (
+      <div className="container">
+        <h2 style={{ marginBottom: '20px' }}>Butikker</h2>
+
+        {/* Kurv-vælger */}
+        {visibleCarts.length > 1 && (
+          <div className="cart-selector">
+            {visibleCarts.map(c => (
+              <button key={c.id} className={`glass ${c.id === activeCartId ? 'btn-primary' : ''} `} onClick={() => setActiveCartId(c.id)}>
+                {c.name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '28px' }}>
+          {shops.map(shop => (
+            <button key={shop.id} className={`glass ${selectedShop?.id === shop.id ? 'btn-primary' : ''} `}
+              style={{ padding: '22px', borderRadius: '20px', border: 'none', cursor: 'pointer', fontSize: '1.05rem', fontWeight: 600 }}
+              onClick={() => setSelectedShop(shop)}
+            >
+              {shop.name}
             </button>
           ))}
         </div>
-      )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '28px' }}>
-        {shops.map(shop => (
-          <button key={shop.id} className={`glass ${selectedShop?.id === shop.id ? 'btn-primary' : ''} `}
-            style={{ padding: '22px', borderRadius: '20px', border: 'none', cursor: 'pointer', fontSize: '1.05rem', fontWeight: 600 }}
-            onClick={() => setSelectedShop(shop)}
-          >
-            {shop.name}
-          </button>
-        ))}
-      </div>
+        {selectedShop && (
+          <>
+            <h3 style={{ marginBottom: '14px' }}>Varer i {selectedShop.name}</h3>
 
-      {selectedShop && (
-        <>
-          <h3 style={{ marginBottom: '14px' }}>Varer i {selectedShop.name}</h3>
+            {/* Søgefelt */}
+            <div className="glass" style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', borderRadius: '16px', marginBottom: '15px', border: '1px solid rgba(0,0,0,0.05)' }}>
+              <span style={{ marginRight: '10px', fontSize: '1.2rem', opacity: 0.5 }}>🔎</span>
+              <input
+                type="text"
+                placeholder="Søg i varer..."
+                value={shopSearchQuery}
+                onChange={(e) => setShopSearchQuery(e.target.value)}
+                style={{ background: 'none', border: 'none', color: 'inherit', width: '100%', outline: 'none', fontSize: '1rem' }}
+              />
+              {shopSearchQuery && (
+                <button onClick={() => setShopSearchQuery('')} style={{ background: 'none', border: 'none', color: 'inherit', opacity: 0.5, fontSize: '1.2rem', cursor: 'pointer', padding: '0 5px' }}>✕</button>
+              )}
+            </div>
 
-          {/* Søgefelt */}
-          <div className="glass" style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', borderRadius: '16px', marginBottom: '15px', border: '1px solid rgba(0,0,0,0.05)' }}>
-            <span style={{ marginRight: '10px', fontSize: '1.2rem', opacity: 0.5 }}>🔎</span>
-            <input
-              type="text"
-              placeholder="Søg i varer..."
-              value={shopSearchQuery}
-              onChange={(e) => setShopSearchQuery(e.target.value)}
-              style={{ background: 'none', border: 'none', color: 'inherit', width: '100%', outline: 'none', fontSize: '1rem' }}
-            />
-            {shopSearchQuery && (
-              <button onClick={() => setShopSearchQuery('')} style={{ background: 'none', border: 'none', color: 'inherit', opacity: 0.5, fontSize: '1.2rem', cursor: 'pointer', padding: '0 5px' }}>✕</button>
-            )}
-          </div>
-
-          {/* Kategori-vælger */}
-          <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', marginBottom: '20px', paddingBottom: '10px', scrollbarWidth: 'none' }}>
-            <button
-              className={`glass ${newItemCat === 'all' && !shopSearchQuery ? 'active' : ''}`}
-              style={{
-                padding: '10px 18px',
-                borderRadius: '14px',
-                whiteSpace: 'nowrap',
-                fontWeight: 600,
-                fontSize: '0.9rem',
-                border: (newItemCat === 'all' && !shopSearchQuery) ? '2px solid var(--primary)' : '1px solid rgba(0,0,0,0.05)',
-                color: (newItemCat === 'all' && !shopSearchQuery) ? 'var(--primary)' : 'inherit'
-              }}
-              onClick={() => {
-                setNewItemCat('all');
-                setShopSearchQuery('');
-              }}
-            >
-              Alle varer
-            </button>
-            {categories.map(cat => (
+            {/* Kategori-vælger */}
+            <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', marginBottom: '20px', paddingBottom: '10px', scrollbarWidth: 'none' }}>
               <button
-                key={cat}
-                className={`glass ${newItemCat === cat && !shopSearchQuery ? 'active' : ''}`}
+                className={`glass ${newItemCat === 'all' && !shopSearchQuery ? 'active' : ''}`}
                 style={{
                   padding: '10px 18px',
                   borderRadius: '14px',
                   whiteSpace: 'nowrap',
                   fontWeight: 600,
                   fontSize: '0.9rem',
-                  border: (newItemCat === cat && !shopSearchQuery) ? '2px solid var(--primary)' : '1px solid rgba(0,0,0,0.05)',
-                  color: (newItemCat === cat && !shopSearchQuery) ? 'var(--primary)' : 'inherit'
+                  border: (newItemCat === 'all' && !shopSearchQuery) ? '2px solid var(--primary)' : '1px solid rgba(0,0,0,0.05)',
+                  color: (newItemCat === 'all' && !shopSearchQuery) ? 'var(--primary)' : 'inherit'
                 }}
                 onClick={() => {
-                  setNewItemCat(cat);
-                  setShopSearchQuery(''); // Ryd søgning når man vælger kategori
+                  setNewItemCat('all');
+                  setShopSearchQuery('');
                 }}
               >
-                {cat}
+                Alle varer
               </button>
-            ))}
-          </div>
-
-          {availableItems.length === 0 ? (
-            <div className="glass" style={{ padding: '30px', borderRadius: '20px', textAlign: 'center', opacity: 0.6 }}>Alle varer er allerede i kurven</div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {(shopSearchQuery ? filteredTemplates : (newItemCat === 'all' ? availableItems : availableItems.filter(i => i.category === newItemCat))).map(item => {
-                const isInCart = activeCart.items.some(ci => ci.id === item.id);
-                if (isInCart) return null;
-                return (
-                  <div key={item.id} className="glass"
-                    style={{ width: '100%', padding: '10px 14px', borderRadius: '14px', display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}
-                  >
-                    <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                      <span style={{ fontWeight: 500 }}>{item.name}</span>
-                      {shopSearchQuery && <span style={{ fontSize: '0.7rem', opacity: 0.5 }}>{item.category}</span>}
-                    </div>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="Antal"
-                      value={itemQuantities[item.id] || ''}
-                      onChange={e => setItemQuantities(prev => ({ ...prev, [item.id]: e.target.value }))}
-                      onClick={e => e.stopPropagation()}
-                      style={{ width: '60px', padding: '6px 8px', borderRadius: '8px', textAlign: 'center', fontSize: '0.85rem' }}
-                    />
-                    <button
-                      onClick={() => addItemToCart(item)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.4rem', opacity: 0.5, padding: '4px 8px' }}
-                    >+</button>
-                  </div>
-                );
-              })}
+              {categories.map(cat => (
+                <button
+                  key={cat}
+                  className={`glass ${newItemCat === cat && !shopSearchQuery ? 'active' : ''}`}
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: '14px',
+                    whiteSpace: 'nowrap',
+                    fontWeight: 600,
+                    fontSize: '0.9rem',
+                    border: (newItemCat === cat && !shopSearchQuery) ? '2px solid var(--primary)' : '1px solid rgba(0,0,0,0.05)',
+                    color: (newItemCat === cat && !shopSearchQuery) ? 'var(--primary)' : 'inherit'
+                  }}
+                  onClick={() => {
+                    setNewItemCat(cat);
+                    setShopSearchQuery('');
+                  }}
+                >
+                  {cat}
+                </button>
+              ))}
             </div>
-          )}
-        </>
-      )}
-    </div>
-  );
+
+            {filteredByCat.length === 0 ? (
+              <div className="glass" style={{ padding: '30px', borderRadius: '20px', textAlign: 'center', opacity: 0.6 }}>Alle varer er allerede i kurven</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {sortedCategories.map(catName => {
+                  const catItems = grouped[catName];
+                  return (
+                    <div key={catName}>
+                      <h4 style={{ fontSize: '0.8rem', opacity: 0.5, marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '1px' }}>{catName}</h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {catItems.map(item => {
+                          const isInCart = activeCart.items.some(ci => ci.id === item.id);
+                          if (isInCart) return null;
+                          return (
+                            <div key={item.id} className="glass"
+                              style={{ width: '100%', padding: '10px 14px', borderRadius: '14px', display: 'flex', alignItems: 'center', gap: '10px' }}
+                            >
+                              <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                                <span style={{ fontWeight: 500 }}>{item.name}</span>
+                                {shopSearchQuery && <span style={{ fontSize: '0.7rem', opacity: 0.5 }}>{item.category}</span>}
+                              </div>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                placeholder="Antal"
+                                value={itemQuantities[item.id] || ''}
+                                onChange={e => setItemQuantities(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                onClick={e => e.stopPropagation()}
+                                style={{ width: '60px', padding: '6px 8px', borderRadius: '8px', textAlign: 'center', fontSize: '0.85rem' }}
+                              />
+                              <button
+                                onClick={() => addItemToCart(item)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.4rem', opacity: 0.5, padding: '4px 8px' }}
+                              >+</button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  };
 
   // ─── RENDER: Indkøbskurv ───
   const renderCart = () => {
