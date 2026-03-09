@@ -1278,83 +1278,6 @@ function App() {
       alert("Adgangskode nulstillet!");
     };
 
-    const handleMigrateUsers = async () => {
-      const usersRaw = localStorage.getItem(USERS_STORAGE_KEY) || '[]';
-      const cartsRaw = localStorage.getItem('handl_carts') || '[]';
-      const localUsers: User[] = JSON.parse(usersRaw);
-      const localCarts: CartProfile[] = JSON.parse(cartsRaw);
-
-      if (localUsers.length === 0 && localCarts.length === 0) {
-        alert("Ingen lokale data fundet at migrere.");
-        return;
-      }
-
-      if (!window.confirm(`Vil du uploade ${localUsers.length} brugere, ${localCarts.length} kurve og tilhørende forbindelser til databasen?`)) return;
-
-      // Saml alle varer fra alle kurve
-      const allItems: Item[] = [];
-      localCarts.forEach(cart => {
-        if (cart.items) {
-          cart.items.forEach(item => {
-            allItems.push({ ...item, cartId: cart.id, userId: cart.userId });
-          });
-        }
-      });
-
-      console.log("Migrerer:", { localUsers, localCarts, allItems });
-
-      try {
-        await handleSync({
-          users: localUsers,
-          carts: localCarts,
-          items: allItems,
-          // Vi kan ikke sende connections direkte nemt her, da de ligger inde i User objekterne i localStorage
-          // Men sync.ts i Cloudflare Functions kan udpakke dem hvis vi vil, 
-          // ELLER vi kan stole på at register API i sync.ts allerede håndterer det hvis vi sender users.
-        });
-
-        // Da register API og sync API er lidt forskellige, sikrer vi os at connections også kommer med
-        // ved at sende dem eksplicit hvis de findes
-        const allConnections: any[] = [];
-        localUsers.forEach(u => {
-          if (u.connectedTo) {
-            u.connectedTo.forEach(targetId => {
-              allConnections.push({ follower_id: u.id, followed_id: targetId });
-            });
-          }
-          if (u.subscribers) {
-            u.subscribers.forEach(subId => {
-              allConnections.push({ follower_id: subId, followed_id: u.id });
-            });
-          }
-        });
-
-        // VIGTIGT: Udled forbindelser fra kurvene! 
-        localCarts.forEach(cart => {
-          if (cart.userId && cart.userId !== currentUserId && !cart.userId.startsWith('private_')) {
-            allConnections.push({ follower_id: currentUserId, followed_id: cart.userId });
-          }
-        });
-
-        // Fjern dubletter
-        const uniqueConnections = allConnections.filter((conn, index, self) =>
-          index === self.findIndex((t) => (
-            t.follower_id === conn.follower_id && t.followed_id === conn.followed_id
-          ))
-        );
-
-        if (uniqueConnections.length > 0) {
-          console.log("Sender forbindelser:", uniqueConnections);
-          await handleSync({ connections: uniqueConnections });
-        }
-
-        alert(`Migration færdig! ${localUsers.length} brugere, ${localCarts.length} kurve, ${allItems.length} varer og ${uniqueConnections.length} forbindelser blev overført.`);
-        handleSync(); // Refresh efter migration
-      } catch (e: any) {
-        console.error("Migration fejlede", e);
-        alert("Der opstod en fejl under migrationen: " + (e.message || "Ukendt fejl"));
-      }
-    };
 
     const handleCreateUser = async () => {
       const name = window.prompt("Fuldt navn:");
@@ -1430,9 +1353,6 @@ function App() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', gap: '10px' }}>
           <h2 style={{ margin: 0 }}>Brugere ({allUsers.length})</h2>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="glass" style={{ padding: '8px 12px', fontSize: '0.8rem' }} onClick={handleMigrateUsers} title="Migrér lokale brugere til skyen">
-              ☁️ Migrér
-            </button>
             <button className="btn-primary" style={{ padding: '8px 16px', fontSize: '0.9rem' }} onClick={handleCreateUser}>
               + Opret
             </button>
