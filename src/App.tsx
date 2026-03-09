@@ -234,11 +234,11 @@ function App() {
       }
 
       // Merge items
-      if (cloudData.items) {
+      if (cloudData.items && cloudData.items.length > 0) {
         setCarts(prev => prev.map(cart => {
           const cloudItems = cloudData.items.filter((i: any) => i.cart_id === cart.id);
-          // Vi merger kun hvis der faktisk er data i skyen for denne kurv
-          if (cloudItems.length === 0 && cart.id !== 'mine') return cart;
+          // Kun overskriv hvis vi faktisk har data fra skyen for denne specifikke kurv
+          if (cloudItems.length === 0) return cart;
 
           return {
             ...cart,
