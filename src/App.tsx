@@ -192,7 +192,7 @@ function App() {
   }, [currentUserId]);
 
   // ─── Cloud Sync ───
-  const handleSync = useCallback(async (pushData?: { carts?: CartProfile[], items?: Item[] }) => {
+  const handleSync = useCallback(async (pushData?: { carts?: CartProfile[], items?: Item[], connections?: any[] }) => {
     if (!currentUserId || userStatus !== 'approved') return;
 
     try {
@@ -210,7 +210,21 @@ function App() {
       if (!res.ok) return;
 
       const cloudData = await res.json() as any;
-      if (cloudData.users) setAllUsers(cloudData.users);
+      if (cloudData.users) {
+        setAllUsers(() => {
+          // Opbyg connectedTo og subscribers kort fra forbindelserne
+          const connections = cloudData.connections || [];
+          return cloudData.users.map((u: any) => {
+            const connectedTo = connections
+              .filter((c: any) => c.follower_id === u.id)
+              .map((c: any) => c.followed_id);
+            const subscribers = connections
+              .filter((c: any) => c.followed_id === u.id)
+              .map((c: any) => c.follower_id);
+            return { ...u, connectedTo, subscribers };
+          });
+        });
+      }
 
       // Merge kurve: Vi prioriterer skyen for delte kurve, 
       // men beholder 'mine' indtil vi er sikre på den er i skyen.
@@ -271,11 +285,21 @@ function App() {
             allItems.push({ ...i, cartId: c.id });
           });
         });
-        handleSync({ carts, items: allItems });
+        // Fladgør forbindelser til DB format
+        const allConnections: any[] = [];
+        allUsers.forEach(u => {
+          if (u.connectedTo) {
+            u.connectedTo.forEach(targetId => {
+              allConnections.push({ follower_id: u.id, followed_id: targetId });
+            });
+          }
+        });
+
+        handleSync({ carts, items: allItems, connections: allConnections });
       }, 3000);
       return () => clearTimeout(timer);
     }
-  }, [carts, currentUserId, userStatus, handleSync]);
+  }, [carts, allUsers, currentUserId, userStatus, handleSync]);
 
   // ─── 10-sekunders auto-opdatering ───
   useEffect(() => {

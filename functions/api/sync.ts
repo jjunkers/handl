@@ -14,22 +14,23 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
         // 1. Hent alle brugere (bruges til admin og forbindelser)
         const users = await context.env.DB.prepare("SELECT * FROM users").all();
 
-        // 2. Hent forbindelser for denne bruger
+        // 2. Hent ALLE forbindelser (til admin og netværksgraf)
+        const allConnections = await context.env.DB.prepare("SELECT * FROM user_connections").all();
+
+        // 3. Find forbindelser for denne bruger specifikt (til at finde kurve)
         const connections = await context.env.DB.prepare(
             "SELECT followed_id FROM user_connections WHERE follower_id = ?"
         ).bind(userId).all();
         const followedIds = connections.results.map((c: any) => c.followed_id);
 
-        // 3. Find alle kurve der er relevante:
-        // - Ejet af brugeren
-        // - Eller ejet af en person brugeren følger (hvis de ikke er private)
+        // 4. Find alle kurve der er relevante
         const carts = await context.env.DB.prepare(`
       SELECT * FROM carts 
       WHERE owner_id = ? 
       OR owner_id IN (${followedIds.length ? followedIds.map(() => '?').join(',') : "''"})
     `).bind(userId, ...followedIds).all();
 
-        // 4. Hent items til disse kurve
+        // 5. Hent items til disse kurve
         const cartIds = carts.results.map((c: any) => c.id);
         const items = cartIds.length
             ? await context.env.DB.prepare(`
@@ -39,13 +40,14 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
 
         return new Response(JSON.stringify({
             users: users.results,
+            connections: allConnections.results,
             carts: carts.results.map((c: any) => ({
                 ...c,
                 config: c.config ? JSON.parse(c.config) : {}
             })),
             items: items.results.map((i: any) => ({
                 ...i,
-                checked: i.checked === 1 // Konverter fra SQL 0/1 til bool
+                checked: i.checked === 1
             }))
         }), {
             headers: { "Content-Type": "application/json" }
@@ -57,13 +59,14 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
     try {
-        const { userId, carts, items } = await context.request.json() as any;
+        const { userId, carts, items, connections } = await context.request.json() as any;
 
         if (!userId) return new Response("Missing userId", { status: 400 });
 
         const statements = [];
 
-        // Opdater kurve (kun dem brugeren ejer)
+        // Opdater kurve
+        // ... (uforandret logic herunder)
         for (const cart of (carts || [])) {
             if (cart.userId === userId || cart.userId === `private_${userId}`) {
                 statements.push(
@@ -108,6 +111,16 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
                     item.lastCheckedAt || null,
                     item.quantity || null
                 )
+            );
+        }
+
+        // Opdater forbindelser
+        for (const conn of (connections || [])) {
+            statements.push(
+                context.env.DB.prepare(`
+          INSERT OR IGNORE INTO user_connections (follower_id, followed_id)
+          VALUES (?, ?)
+        `).bind(conn.follower_id, conn.followed_id)
             );
         }
 

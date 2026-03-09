@@ -31,7 +31,17 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             user.time
         ).run();
 
-        // Opret standard "Min kurv" i DB hvis den ikke findes (valgfrit, normalt håndteres det på sync)
+        // ─── Migrér forbindelser ───
+        if (user.connectedTo && Array.isArray(user.connectedTo)) {
+            const statements = user.connectedTo.map((targetId: string) =>
+                context.env.DB.prepare(
+                    "INSERT OR IGNORE INTO user_connections (follower_id, followed_id) VALUES (?, ?)"
+                ).bind(user.id, targetId)
+            );
+            if (statements.length > 0) {
+                await context.env.DB.batch(statements);
+            }
+        }
 
         return new Response(JSON.stringify({ success: true }), {
             headers: { "Content-Type": "application/json" }
