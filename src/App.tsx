@@ -191,15 +191,102 @@ function App() {
     }
   }, [currentUserId]);
 
+  // ─── Cloud Sync ───
+  const handleSync = useCallback(async (pushData?: { carts?: CartProfile[], items?: Item[] }) => {
+    if (!currentUserId || userStatus !== 'approved') return;
+
+    try {
+      // 1. Hvis vi har pushData, så send det op
+      if (pushData) {
+        await fetch('/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: currentUserId, ...pushData })
+        });
+      }
+
+      // 2. Hent de nyeste data fra skyen
+      const res = await fetch(`/api/sync?userId=${currentUserId}`);
+      if (!res.ok) return;
+
+      const cloudData = await res.json() as any;
+      if (cloudData.users) setAllUsers(cloudData.users);
+
+      // Merge kurve: Vi prioriterer skyen for delte kurve, 
+      // men beholder 'mine' indtil vi er sikre på den er i skyen.
+      if (cloudData.carts) {
+        setCarts(prev => {
+          const newCarts = [...prev];
+          cloudData.carts.forEach((cloudCart: any) => {
+            const idx = newCarts.findIndex(c => c.id === cloudCart.id);
+            const formattedCart: CartProfile = {
+              id: cloudCart.id,
+              name: cloudCart.name,
+              userId: cloudCart.owner_id,
+              items: [], // Items hentes separat herunder
+              ...cloudCart.config
+            };
+            if (idx === -1) newCarts.push(formattedCart);
+            else newCarts[idx] = { ...newCarts[idx], ...formattedCart };
+          });
+          return newCarts;
+        });
+      }
+
+      // Merge items
+      if (cloudData.items) {
+        setCarts(prev => prev.map(cart => {
+          const cloudItems = cloudData.items.filter((i: any) => i.cart_id === cart.id);
+          // Vi merger kun hvis der faktisk er data i skyen for denne kurv
+          if (cloudItems.length === 0 && cart.id !== 'mine') return cart;
+
+          return {
+            ...cart,
+            items: cloudItems.map((i: any) => ({
+              id: i.id,
+              name: i.name,
+              category: i.category,
+              checked: i.checked,
+              shopId: i.shop_id,
+              lastCheckedAt: i.last_checked_at,
+              quantity: i.quantity
+            }))
+          };
+        }));
+      }
+
+    } catch (e) {
+      console.error("Sync error:", e);
+    }
+  }, [currentUserId, userStatus]);
+
+  // ─── Automatisk push til skyen ved ændringer ───
+  useEffect(() => {
+    if (userStatus === 'approved' && currentUserId) {
+      const timer = setTimeout(() => {
+        // Fladgør items til DB format
+        const allItems: any[] = [];
+        carts.forEach(c => {
+          c.items.forEach(i => {
+            allItems.push({ ...i, cartId: c.id });
+          });
+        });
+        handleSync({ carts, items: allItems });
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [carts, currentUserId, userStatus, handleSync]);
+
   // ─── 10-sekunders auto-opdatering ───
   useEffect(() => {
+    if (userStatus === 'approved') {
+      handleSync(); // Kør straks
+    }
     const interval = setInterval(() => {
-      // I prototype opdaterer vi blot state-timestamp for at trigge re-render
-      // I produktion ville dette være en fetch til serveren
-      console.log('[handl] Auto-opdatering...', new Date().toLocaleTimeString('da-DK'));
+      handleSync();
     }, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [userStatus, handleSync]);
 
   // ─── Hjælpefunktioner ───
 
@@ -227,21 +314,37 @@ function App() {
     };
 
     try {
+      // 1. Gem i D1 via API
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUser)
+      });
+
+      if (!res.ok) {
+        const err = await res.json() as any;
+        alert(err.error || "Fejl ved oprettelse");
+        return;
+      }
+
+      // 2. Gem også lokalt (fallback/speed)
       const usersRaw = localStorage.getItem(USERS_STORAGE_KEY) || '[]';
       const users: User[] = JSON.parse(usersRaw);
       users.push(newUser);
       localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
       setAllUsers(users);
-    } catch (e) { console.error('Failed to save user', e); }
 
-    // Start session
-    localStorage.setItem(SESSION_STORAGE_KEY, newUserId);
+      localStorage.setItem(SESSION_STORAGE_KEY, newUserId);
+      setCurrentUserRole(role);
+      setUserStatus(newUser.status);
 
-    setCurrentUserRole(role);
-    setUserStatus(newUser.status);
-    if (newUser.status === 'approved') {
-      setActiveTab('shop');
-    }
+      // Push 'mine' kurv til skyen med det samme
+      handleSync({ carts: carts.map(c => c.id === 'mine' ? { ...c, userId: `private_${newUserId}` } : c) });
+
+      if (newUser.status === 'approved') {
+        setActiveTab('shop');
+      }
+    } catch (e) { console.error('Failed to register', e); }
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -250,23 +353,24 @@ function App() {
     if (!loginPhone.trim() || !loginPassword.trim()) return;
 
     try {
-      const usersRaw = localStorage.getItem(USERS_STORAGE_KEY) || '[]';
-      const users = JSON.parse(usersRaw);
-      const user = users.find((u: any) => u.phone.trim() === loginPhone.trim());
-
-      if (!user) {
-        setLoginError('Brugeren blev ikke fundet.');
-        return;
-      }
-
       const inputHash = await hashPassword(loginPassword.trim());
-      if (user.hashedPassword !== inputHash) {
-        setLoginError('Forkert adgangskode.');
+
+      // 1. Login via D1 API
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: loginPhone.trim(), hashedPassword: inputHash })
+      });
+
+      if (!res.ok) {
+        const err = await res.json() as any;
+        setLoginError(err.error || "Login fejlede");
         return;
       }
+
+      const user = await res.json() as any;
 
       // Login succesfuldt
-      setAllUsers(users); // Sørg for at den state-variabel opdateres STRAKS før vi skifter view
       localStorage.setItem(SESSION_STORAGE_KEY, user.id);
       setCurrentUserId(user.id);
       setUserStatus(user.status || 'guest');
@@ -274,12 +378,15 @@ function App() {
 
       if (user.status === 'approved') {
         setActiveTab('shop');
-        setActiveCartId('mine'); // Reset til ens egen kurv ved login
+        setActiveCartId('mine');
+        handleSync(); // Hent data med det samme
       } else {
-        setActiveTab('welcome'); // Show pending view
+        setActiveTab('welcome');
       }
-
-    } catch (e) { console.error('Error logging in', e); }
+    } catch (e) {
+      console.error('Error logging in', e);
+      setLoginError("Der skete en fejl. Prøv igen.");
+    }
   };
 
   const handleLogout = () => {

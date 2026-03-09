@@ -1,0 +1,8 @@
+name = "handl"
+compatibility_date = "2024-03-09"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "handl-db"
+database_id = "e576f2e7-4441-4eb7-95bf-e0231f088e05"
