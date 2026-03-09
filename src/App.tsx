@@ -33,7 +33,7 @@ function App() {
   const lastAdminAction = useRef(0);
   const [activeTab, setActiveTab] = useState<Tab>('welcome');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [version] = useState('v1.0.0');
+  const [version] = useState('v1.1.0');
 
   // Login view toggle
   const [isLoginView, setIsLoginView] = useState(false);
@@ -42,6 +42,7 @@ function App() {
   const [loginError, setLoginError] = useState('');
   const [shopSearchQuery, setShopSearchQuery] = useState('');
   const [cartSearchQuery, setCartSearchQuery] = useState('');
+  const [cartCategoryFilter, setCartCategoryFilter] = useState('all');
 
   // Bruger status og Admin mock data
   const [userStatus, setUserStatus] = useState<'guest' | 'pending' | 'approved'>('guest');
@@ -1175,8 +1176,9 @@ function App() {
 
     const filteredItems = cartItems.filter(i => {
       const shopMatch = filterShop === 'all' || i.shopId === filterShop;
+      const categoryMatch = cartCategoryFilter === 'all' || i.category === cartCategoryFilter;
       const searchMatch = !cartSearchQuery.trim() || i.name.toLowerCase().includes(cartSearchQuery.toLowerCase());
-      return shopMatch && searchMatch;
+      return shopMatch && categoryMatch && searchMatch;
     });
 
     const grouped = filteredItems.reduce((acc, item) => {
@@ -1251,6 +1253,35 @@ function App() {
               onClick={() => setFilterShop(shop.id)}
             >
               {shop.name}
+            </button>
+          ))}
+        </div>
+
+        {/* Kategori-filter (vandret scroll) */}
+        <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', marginBottom: '20px', paddingBottom: '10px', scrollbarWidth: 'none' }}>
+          <button
+            className={`glass ${cartCategoryFilter === 'all' ? 'active' : ''}`}
+            style={{
+              padding: '10px 18px', borderRadius: '14px', whiteSpace: 'nowrap', fontWeight: 600, fontSize: '0.9rem',
+              border: cartCategoryFilter === 'all' ? '2px solid var(--primary)' : '1px solid rgba(0,0,0,0.05)',
+              color: cartCategoryFilter === 'all' ? 'var(--primary)' : 'inherit'
+            }}
+            onClick={() => setCartCategoryFilter('all')}
+          >
+            Alle varer
+          </button>
+          {categories.map(cat => (
+            <button
+              key={cat}
+              className={`glass ${cartCategoryFilter === cat ? 'active' : ''}`}
+              style={{
+                padding: '10px 18px', borderRadius: '14px', whiteSpace: 'nowrap', fontWeight: 600, fontSize: '0.9rem',
+                border: cartCategoryFilter === cat ? '2px solid var(--primary)' : '1px solid rgba(0,0,0,0.05)',
+                color: cartCategoryFilter === cat ? 'var(--primary)' : 'inherit'
+              }}
+              onClick={() => setCartCategoryFilter(cat)}
+            >
+              {cat}
             </button>
           ))}
         </div>
