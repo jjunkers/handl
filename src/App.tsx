@@ -33,7 +33,7 @@ function App() {
   const lastAdminAction = useRef(0);
   const [activeTab, setActiveTab] = useState<Tab>('welcome');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [version] = useState('v1.1.5');
+  const [version] = useState('v1.1.6');
 
   // Login view toggle
   const [isLoginView, setIsLoginView] = useState(false);
@@ -204,7 +204,7 @@ function App() {
   }, [currentUserId]);
 
   // ─── Cloud Sync ───
-  const handleSync = useCallback(async (pushData?: { carts?: CartProfile[], items?: Item[], connections?: any[], deletedConnections?: any[], users?: User[] }) => {
+  const handleSync = useCallback(async (pushData?: { carts?: CartProfile[], items?: Item[], connections?: any[], deletedConnections?: any[], deletedCarts?: string[], users?: User[] }) => {
     if (!currentUserId || userStatus !== 'approved') return;
 
     try {
@@ -695,6 +695,9 @@ function App() {
 
     setCarts(prev => prev.filter(c => c.id !== cartId));
     if (activeCartId === cartId) setActiveCartId('mine');
+
+    // Sync sletning til skyen
+    handleSync({ deletedCarts: [cartId] });
   };
 
   // ─── Opsætning (nu bundet til aktiv kurv) ───
