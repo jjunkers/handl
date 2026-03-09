@@ -933,11 +933,21 @@ function App() {
       : cartItems.filter(i => i.shopId === filterShop);
 
     const grouped = filteredItems.reduce((acc, item) => {
-      const shopName = shops.find(s => s.id === item.shopId)?.name || 'Ukendt';
-      if (!acc[shopName]) acc[shopName] = [];
-      acc[shopName].push(item);
+      const catName = item.category || 'Andet';
+      if (!acc[catName]) acc[catName] = [];
+      acc[catName].push(item);
       return acc;
     }, {} as Record<string, Item[]>);
+
+    // Sort categories based on their original order in the settings
+    const sortedCategories = Object.keys(grouped).sort((a, b) => {
+      const indexA = categories.indexOf(a);
+      const indexB = categories.indexOf(b);
+      // If a category isn't in the list, push it to the end
+      if (indexA === -1) return 1;
+      if (indexB === -1) return -1;
+      return indexA - indexB;
+    });
 
     return (
       <div className="container">
@@ -956,9 +966,9 @@ function App() {
 
         {/* Butiks-filter */}
         <div className="filter-pills">
-          <button className={`filter - pill glass ${filterShop === 'all' ? 'btn-primary' : ''} `} onClick={() => setFilterShop('all')}>Alle</button>
+          <button className={`filter-pill glass ${filterShop === 'all' ? 'btn-primary' : ''}`} onClick={() => setFilterShop('all')}>Alle</button>
           {shops.map(s => (
-            <button key={s.id} className={`filter - pill glass ${filterShop === s.id ? 'btn-primary' : ''} `} onClick={() => setFilterShop(s.id)}>
+            <button key={s.id} className={`filter-pill glass ${filterShop === s.id ? 'btn-primary' : ''}`} onClick={() => setFilterShop(s.id)}>
               {s.name}
             </button>
           ))}
@@ -966,27 +976,37 @@ function App() {
 
         {filteredItems.length === 0 ? (
           <div className="glass" style={{ padding: '40px', borderRadius: '20px', textAlign: 'center', opacity: 0.6 }}>
-            {filterShop === 'all' ? 'Din kurv er tom' : `Ingen varer fra ${shops.find(s => s.id === filterShop)?.name} `}
+            {filterShop === 'all' ? 'Din kurv er tom' : `Ingen varer fra ${shops.find(s => s.id === filterShop)?.name}`}
           </div>
         ) : (
-          Object.entries(grouped).map(([shopName, shopItems]) => (
-            <div key={shopName} style={{ marginBottom: '28px' }}>
-              <h3 style={{ fontSize: '0.9rem', opacity: 0.5, marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '1px' }}>{shopName}</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {shopItems.map(item => (
-                  <div key={item.id} className="glass"
-                    style={{ padding: '14px 18px', borderRadius: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: item.checked ? 0.4 : 1, transition: '0.3s', textDecoration: item.checked ? 'line-through' : 'none' }}
-                  >
-                    <span style={{ fontWeight: 500 }}>
-                      {item.name}{item.quantity ? <span style={{ opacity: 0.5, marginLeft: '8px', fontSize: '0.85rem' }}>({item.quantity})</span> : ''}
-                    </span>
-                    <input type="checkbox" checked={item.checked} onChange={() => toggleItemInCart(item.id)}
-                      style={{ width: '22px', height: '22px', cursor: 'pointer', accentColor: 'var(--primary)' }} />
-                  </div>
-                ))}
+          sortedCategories.map(catName => {
+            const catItems = grouped[catName];
+            return (
+              <div key={catName} style={{ marginBottom: '28px' }}>
+                <h3 style={{ fontSize: '0.9rem', opacity: 0.5, marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '1px' }}>{catName}</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {catItems.map(item => {
+                    const shopPrefix = filterShop === 'all' && item.shopId !== 'random'
+                      ? shops.find(s => s.id === item.shopId)?.name
+                      : null;
+                    return (
+                      <div key={item.id} className="glass"
+                        style={{ padding: '14px 18px', borderRadius: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', opacity: item.checked ? 0.4 : 1, transition: '0.3s', textDecoration: item.checked ? 'line-through' : 'none' }}
+                      >
+                        <span style={{ fontWeight: 500 }}>
+                          {item.name}
+                          {shopPrefix && <span style={{ opacity: 0.5, marginLeft: '6px', fontSize: '0.85rem' }}>({shopPrefix})</span>}
+                          {item.quantity ? <span style={{ opacity: 0.5, marginLeft: '8px', fontSize: '0.85rem' }}>[{item.quantity}]</span> : ''}
+                        </span>
+                        <input type="checkbox" checked={item.checked} onChange={() => toggleItemInCart(item.id)}
+                          style={{ width: '22px', height: '22px', cursor: 'pointer', accentColor: 'var(--primary)' }} />
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     );
