@@ -1289,7 +1289,7 @@ function App() {
         return;
       }
 
-      if (!window.confirm(`Vil du uploade ${localUsers.length} brugere og ${localCarts.length} kurve til databasen?`)) return;
+      if (!window.confirm(`Vil du uploade ${localUsers.length} brugere, ${localCarts.length} kurve og tilhørende forbindelser til databasen?`)) return;
 
       // Saml alle varer fra alle kurve
       const allItems: Item[] = [];
@@ -1328,7 +1328,7 @@ function App() {
           await handleSync({ connections: allConnections });
         }
 
-        alert(`Migration færdig! ${localUsers.length} brugere, ${localCarts.length} kurve og ${allItems.length} varer blev overført.`);
+        alert(`Migration færdig! ${localUsers.length} brugere, ${localCarts.length} kurve, ${allItems.length} varer og ${allConnections.length} forbindelser blev overført.`);
         handleSync(); // Refresh efter migration
       } catch (e: any) {
         console.error("Migration fejlede", e);
