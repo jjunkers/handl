@@ -27,13 +27,18 @@ const hashPassword = async (pwd: string) => {
 
 // Types for localStorage persistence
 const USERS_STORAGE_KEY = 'handl_users';
+
+const DEFAULT_CART_KEY = 'handl_default_cart';
 const SESSION_STORAGE_KEY = 'handl_session';
 
 function App() {
   const lastAdminAction = useRef(0);
   const [activeTab, setActiveTab] = useState<Tab>('welcome');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [version] = useState('v1.1.6');
+  const [version] = useState('v1.1.7');
+
+  // Default cart state
+  const [defaultCartId, setDefaultCartId] = useState<string>('mine');
 
   // Login view toggle
   const [isLoginView, setIsLoginView] = useState(false);
@@ -289,6 +294,34 @@ function App() {
       throw err; // Rethrow så kaldere kan fange fejlen
     }
   }, [currentUserId, userStatus]);
+
+  // ─── Initial Data Fetch ───
+  useEffect(() => {
+    if (userStatus === 'approved' && currentUserId) {
+      handleSync().then(() => {
+        // Vælg aktiv kurv baseret på defaultCartId, ellers 'mine'
+        const storedDefault = localStorage.getItem(DEFAULT_CART_KEY);
+        if (storedDefault) setDefaultCartId(storedDefault);
+
+        // Når data er hentet, og vi har carts
+        setCarts(prevCarts => {
+          if (prevCarts && prevCarts.length > 0) {
+            const targetCart = storedDefault || defaultCartId;
+            const cartExists = prevCarts.some(c => c.id === targetCart);
+            if (cartExists) {
+              setActiveCartId(targetCart);
+            } else {
+              setActiveCartId('mine');
+            }
+          } else {
+            setActiveCartId('mine');
+          }
+          return prevCarts;
+        });
+
+      });
+    }
+  }, [userStatus, currentUserId]);
 
   // ─── Automatisk push til skyen ved ændringer ───
   useEffect(() => {
@@ -623,6 +656,13 @@ function App() {
       }
       return prev;
     });
+
+    // Sync sletning af vare til skyen for den aktive kurv
+    const updatedActiveCart = {
+      ...activeCart,
+      items: activeCart.items.filter(i => i.id !== itemId)
+    };
+    handleSync({ carts: [updatedActiveCart] });
   };
 
   // Tilføj ny kurv
@@ -976,9 +1016,31 @@ function App() {
         <p style={{ fontSize: '0.85rem', opacity: 0.6, marginTop: 0 }}>Vælg aktiv kurv eller opret en ny (f.eks. til din mor)</p>
         <div className="chip-list">
           {visibleCarts.map(c => (
-            <div key={c.id} className={`chip glass ${c.id === activeCartId ? 'btn-primary' : ''} `} style={{ cursor: 'pointer' }} onClick={() => setActiveCartId(c.id)}>
-              <span>{c.name}</span>
-              {c.id !== 'mine' && <button className="delete-chip" onClick={e => { e.stopPropagation(); deleteCart(c.id); }}>×</button>}
+            <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className={`chip glass ${c.id === activeCartId ? 'btn-primary' : ''} `} style={{ cursor: 'pointer', flex: 1, display: 'flex', justifyContent: 'space-between' }} onClick={() => setActiveCartId(c.id)}>
+                <span>{c.name}</span>
+                {c.id !== 'mine' && <button className="delete-chip" onClick={e => { e.stopPropagation(); deleteCart(c.id); }}>×</button>}
+              </div>
+              <button
+                onClick={() => {
+                  setDefaultCartId(c.id);
+                  localStorage.setItem(DEFAULT_CART_KEY, c.id);
+                }}
+                style={{
+                  background: defaultCartId === c.id ? 'var(--primary)' : 'rgba(0,0,0,0.05)',
+                  color: defaultCartId === c.id ? 'white' : 'inherit',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap'
+                }}
+                title="Sæt som standard opstartskurv"
+              >
+                {defaultCartId === c.id ? 'Standard ✓' : 'Sæt som standard'}
+              </button>
             </div>
           ))}
         </div>
