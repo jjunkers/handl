@@ -1,13 +1,14 @@
 import React from 'react';
 
 interface BottomNavProps {
-  activeTab: 'settings' | 'cart' | 'shop';
-  onTabChange: (tab: 'settings' | 'cart' | 'shop') => void;
+  activeTab: 'settings' | 'cart' | 'shop' | 'admin';
+  onTabChange: (tab: 'settings' | 'cart' | 'shop' | 'admin') => void;
+  isAdmin?: boolean;
 }
 
-const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) => {
+const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange, isAdmin }) => {
   return (
-    <nav className="nav-bar glass">
+    <nav className="nav-bar glass" style={{ gridTemplateColumns: isAdmin ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)' }}>
       <button
         className={`btn-round ${activeTab === 'settings' ? 'btn-active' : ''}`}
         onClick={() => onTabChange('settings')}
@@ -31,6 +32,16 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) => {
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
       </button>
+
+      {isAdmin && (
+        <button
+          className={`btn-round ${activeTab === 'admin' ? 'btn-active' : ''}`}
+          onClick={() => onTabChange('admin')}
+          aria-label="Admin"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+        </button>
+      )}
     </nav>
   );
 };

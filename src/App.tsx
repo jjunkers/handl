@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import BottomNav from './components/BottomNav';
 import InstallGuide from './components/InstallGuide';
-import type { Shop, Item, CartProfile } from './types';
+import type { Shop, Item, CartProfile, User } from './types';
 import { INITIAL_SHOPS, ITEM_TEMPLATES, DEFAULT_CATEGORIES } from './types';
 import './index.css';
 
-type Tab = 'settings' | 'cart' | 'shop' | 'welcome';
+type Tab = 'settings' | 'cart' | 'shop' | 'welcome' | 'admin';
 
 // Hjælpefunktion: generér unikt ID
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -43,10 +43,10 @@ function App() {
   // Bruger status og Admin mock data
   const [userStatus, setUserStatus] = useState<'guest' | 'pending' | 'approved'>('guest');
   const [currentUserId, setCurrentUserId] = useState('');
-  const [isAdminView, setIsAdminView] = useState(false);
+  const [currentUserRole, setCurrentUserRole] = useState<'admin' | 'user'>('user');
 
-  // Hent pending brugere fra localStorage (hvis admin skal kunne se dem og godkende)
-  const [pendingUsers, setPendingUsers] = useState<Array<{ id: string, name: string, phone: string, time: string, status?: string }>>([]);
+  // Alle brugere (kun relevant for admin, men vi henter dem)
+  const [allUsers, setAllUsers] = useState<User[]>([]);
 
   const [userName, setUserName] = useState('');
   const [userSurname, setUserSurname] = useState('');
@@ -88,25 +88,23 @@ function App() {
     } catch { return defaultValue; }
   };
 
-  // Butikker (redigerbare)
-  const [shops, setShops] = useState<Shop[]>(() => loadData('handl_shops', INITIAL_SHOPS));
-  const [newShopName, setNewShopName] = useState('');
-  const [selectedShop, setSelectedShop] = useState<Shop | null>(null);
-
-  // Skabelon (varer + kategorier)
-  const [templateItems, setTemplateItems] = useState<Item[]>(() => loadData('handl_templates', ITEM_TEMPLATES));
-  const [categories, setCategories] = useState<string[]>(() => loadData('handl_categories', DEFAULT_CATEGORIES));
+  // Mellem-state under editering
   const [newItemName, setNewItemName] = useState('');
-  const [newItemCat, setNewItemCat] = useState(DEFAULT_CATEGORIES[0] || '');
   const [newCatName, setNewCatName] = useState('');
   const [editingItem, setEditingItem] = useState<string | null>(null);
   const [editItemName, setEditItemName] = useState('');
-
-  // Varer til stede i butiksvisningen (fjernes fra skabelon når valgt)
-  const [availableItems, setAvailableItems] = useState<Item[]>(templateItems);
+  const [newShopName, setNewShopName] = useState('');
 
   // Flere indkøbskurve
-  const [carts, setCarts] = useState<CartProfile[]>(() => loadData('handl_carts', [{ id: 'mine', name: 'Min kurv', userId: '', items: [] }]));
+  const [carts, setCarts] = useState<CartProfile[]>(() => loadData('handl_carts', [{
+    id: 'mine',
+    name: 'Min kurv',
+    userId: '',
+    items: [],
+    shops: INITIAL_SHOPS,
+    categories: DEFAULT_CATEGORIES,
+    templateItems: ITEM_TEMPLATES
+  }]));
   const [activeCartId, setActiveCartId] = useState(() => loadData('handl_activeCartId', 'mine'));
   const [newCartName, setNewCartName] = useState('');
 
@@ -118,10 +116,20 @@ function App() {
     setLoginError('');
   }, [isLoginView]);
 
+  // Active cart references
+  const activeCart = useMemo(() => carts.find(c => c.id === activeCartId) || carts[0], [carts, activeCartId]);
+
+  // Derived state from active cart
+  const shops = activeCart?.shops || INITIAL_SHOPS;
+  const templateItems = activeCart?.templateItems || ITEM_TEMPLATES;
+  const categories = activeCart?.categories || DEFAULT_CATEGORIES;
+
+  const [newItemCat, setNewItemCat] = useState(categories[0] || '');
+  const [selectedShop, setSelectedShop] = useState<Shop | null>(null);
+  // Varer til stede i butiksvisningen (fjernes fra skabelon når valgt)
+  const [availableItems, setAvailableItems] = useState<Item[]>(activeCart?.templateItems || ITEM_TEMPLATES);
+
   // Sync state to local storage
-  useEffect(() => { localStorage.setItem('handl_shops', JSON.stringify(shops)); }, [shops]);
-  useEffect(() => { localStorage.setItem('handl_templates', JSON.stringify(templateItems)); }, [templateItems]);
-  useEffect(() => { localStorage.setItem('handl_categories', JSON.stringify(categories)); }, [categories]);
   useEffect(() => { localStorage.setItem('handl_carts', JSON.stringify(carts)); }, [carts]);
   useEffect(() => { localStorage.setItem('handl_activeCartId', JSON.stringify(activeCartId)); }, [activeCartId]);
 
@@ -129,10 +137,9 @@ function App() {
   useEffect(() => {
     try {
       const usersRaw = localStorage.getItem(USERS_STORAGE_KEY) || '[]';
-      const users = JSON.parse(usersRaw);
+      const users: User[] = JSON.parse(usersRaw);
 
-      const pending = users.filter((u: any) => u.status === 'pending');
-      setPendingUsers(pending);
+      setAllUsers(users);
 
       const savedSession = localStorage.getItem(SESSION_STORAGE_KEY);
       if (savedSession) {
@@ -140,6 +147,7 @@ function App() {
         if (user) {
           setCurrentUserId(user.id);
           setUserStatus(user.status || 'guest'); // pending or approved
+          setCurrentUserRole(user.role || 'user');
           if (user.status === 'approved') setActiveTab('shop');
         }
       }
@@ -162,6 +170,13 @@ function App() {
     document.body.classList.toggle('dark', isDarkMode);
   }, [isDarkMode]);
 
+  // ─── Synkroniser 'mine' kurv userId med currentUserId ───
+  useEffect(() => {
+    if (currentUserId) {
+      setCarts(prev => prev.map(c => c.id === 'mine' ? { ...c, userId: currentUserId } : c));
+    }
+  }, [currentUserId]);
+
   // ─── 10-sekunders auto-opdatering ───
   useEffect(() => {
     const interval = setInterval(() => {
@@ -173,7 +188,6 @@ function App() {
   }, []);
 
   // ─── Hjælpefunktioner ───
-  const activeCart = carts.find(c => c.id === activeCartId) || carts[0];
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -184,28 +198,36 @@ function App() {
     setCurrentUserId(newUserId);
     setCarts(prev => prev.map(c => c.id === 'mine' ? { ...c, userId: newUserId } : c));
 
+    // Gør den første testbruger med navn "Admin" til administrator
+    const role = userName.toLowerCase() === 'admin' ? 'admin' : 'user';
+
     // Gem bruger i lokal databasen (localStorage)
-    const newUser = {
+    const newUser: User = {
       id: newUserId,
-      name: `${userName} ${userSurname}`,
+      name: `${userName} ${userSurname} `,
       phone: userPhone,
       hashedPassword: hashed,
       time: new Date().toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' }),
-      status: 'pending' // Default ny bruger
+      status: role === 'admin' ? 'approved' : 'pending',
+      role: role
     };
 
     try {
       const usersRaw = localStorage.getItem(USERS_STORAGE_KEY) || '[]';
-      const users = JSON.parse(usersRaw);
+      const users: User[] = JSON.parse(usersRaw);
       users.push(newUser);
       localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
+      setAllUsers(users);
     } catch (e) { console.error('Failed to save user', e); }
 
     // Start session
     localStorage.setItem(SESSION_STORAGE_KEY, newUserId);
 
-    setPendingUsers(prev => [...prev, newUser]);
-    setUserStatus('pending');
+    setCurrentUserRole(role);
+    setUserStatus(newUser.status);
+    if (newUser.status === 'approved') {
+      setActiveTab('shop');
+    }
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -216,14 +238,14 @@ function App() {
     try {
       const usersRaw = localStorage.getItem(USERS_STORAGE_KEY) || '[]';
       const users = JSON.parse(usersRaw);
-      const user = users.find((u: any) => u.phone === loginPhone);
+      const user = users.find((u: any) => u.phone.trim() === loginPhone.trim());
 
       if (!user) {
         setLoginError('Brugeren blev ikke fundet.');
         return;
       }
 
-      const inputHash = await hashPassword(loginPassword);
+      const inputHash = await hashPassword(loginPassword.trim());
       if (user.hashedPassword !== inputHash) {
         setLoginError('Forkert adgangskode.');
         return;
@@ -233,7 +255,13 @@ function App() {
       localStorage.setItem(SESSION_STORAGE_KEY, user.id);
       setCurrentUserId(user.id);
       setUserStatus(user.status || 'guest');
-      if (user.status === 'approved') setActiveTab('shop');
+      setCurrentUserRole(user.role || 'user');
+
+      if (user.status === 'approved') {
+        setActiveTab('shop');
+      } else {
+        setActiveTab('welcome'); // Show pending view
+      }
 
     } catch (e) { console.error('Error logging in', e); }
   };
@@ -242,10 +270,103 @@ function App() {
     localStorage.removeItem(SESSION_STORAGE_KEY);
     setUserStatus('guest');
     setCurrentUserId('');
+    setCurrentUserRole('user');
     setActiveTab('welcome');
     setIsLoginView(true); // Gør det let at logge ind igen
     setLoginPhone('');
     setLoginPassword('');
+    setAllUsers([]);
+  };
+
+  // ─── Forbindelser (Deling) ───
+  const handleSubscribe = () => {
+    const trimmedId = sharedUserId.trim();
+    if (!trimmedId) return;
+
+    // Find brugeren vi prøver at abonnere på (ignorér whitespace)
+    const targetUser = allUsers.find(u => u.id === trimmedId);
+    if (!targetUser) {
+      alert(`Kunne ikke finde bruger med ID: "${trimmedId}"`);
+      return;
+    }
+
+    if (targetUser.id === currentUserId) {
+      alert("Du kan ikke abonnere på dig selv 🙂");
+      return;
+    }
+
+    // Tjek om vi allerede abonnerer
+    const currentUser = allUsers.find(u => u.id === currentUserId);
+    if (currentUser?.connectedTo?.includes(targetUser.id)) {
+      alert("Du følger allerede denne kurv.");
+      return;
+    }
+
+    // Opdater begge profiler (aktuel bruger får connectedTo, targetUser får subscriber)
+    const updatedUsers = allUsers.map(u => {
+      if (u.id === currentUserId) {
+        return { ...u, connectedTo: [...(u.connectedTo || []), targetUser.id] };
+      }
+      if (u.id === targetUser.id) {
+        return { ...u, subscribers: [...(u.subscribers || []), currentUserId] };
+      }
+      return u;
+    });
+
+    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updatedUsers));
+    setAllUsers(updatedUsers);
+
+    // Opret en lokal kurv specielt til dette link (mock)
+    const newCart: CartProfile = { id: uid(), name: `${targetUser.name.split(' ')[0]}s kurv`, userId: targetUser.id, items: [] };
+    setCarts(prev => [...prev, newCart]);
+
+    setSharedUserId('');
+    alert(`Du følger nu ${targetUser.name} !`);
+  };
+
+  const handleRemoveSubscriber = (subscriberId: string) => {
+    const subscriber = allUsers.find(u => u.id === subscriberId);
+    if (!window.confirm(`Er du sikker på at du vil fjerne adgangen for ${subscriber?.name} ? `)) return;
+
+    // Fjern forbindelsen
+    const updatedUsers = allUsers.map(u => {
+      if (u.id === currentUserId) {
+        return { ...u, subscribers: (u.subscribers || []).filter(id => id !== subscriberId) };
+      }
+      if (u.id === subscriberId) {
+        return { ...u, connectedTo: (u.connectedTo || []).filter(id => id !== currentUserId) };
+      }
+      return u;
+    });
+
+    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updatedUsers));
+    setAllUsers(updatedUsers);
+  };
+
+  const handleUnsubscribe = (targetUserId: string) => {
+    const targetUser = allUsers.find(u => u.id === targetUserId);
+    if (!window.confirm(`Er du sikker på at du vil stoppe med at følge ${targetUser?.name}?`)) return;
+
+    // Fjern forbindelsen
+    const updatedUsers = allUsers.map(u => {
+      if (u.id === currentUserId) {
+        return { ...u, connectedTo: (u.connectedTo || []).filter(id => id !== targetUserId) };
+      }
+      if (u.id === targetUserId) {
+        return { ...u, subscribers: (u.subscribers || []).filter(id => id !== currentUserId) };
+      }
+      return u;
+    });
+
+    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updatedUsers));
+    setAllUsers(updatedUsers);
+
+    // Fjern også den lokale kurv
+    const cartToRemove = carts.find(c => c.userId === targetUserId && c.id !== 'mine');
+    if (cartToRemove) {
+      setCarts(prev => prev.filter(c => c.id !== cartToRemove.id));
+      if (activeCartId === cartToRemove.id) setActiveCartId('mine');
+    }
   };
 
   const handleChangePassword = useCallback(async () => {
@@ -348,43 +469,65 @@ function App() {
   // Slet kurv
   const deleteCart = (cartId: string) => {
     if (cartId === 'mine') return; // Kan ikke slette primær kurv
+
+    const cartToDelete = carts.find(c => c.id === cartId);
+    if (cartToDelete && cartToDelete.userId) {
+      const me = allUsers.find(u => u.id === currentUserId);
+      if (me?.connectedTo?.includes(cartToDelete.userId)) {
+        if (window.confirm('Dette er en delt kurv. Vil du stoppe med at følge denne kurv?')) {
+          handleUnsubscribe(cartToDelete.userId);
+        }
+        return;
+      }
+    }
+
     setCarts(prev => prev.filter(c => c.id !== cartId));
     if (activeCartId === cartId) setActiveCartId('mine');
+  };
+
+  // ─── Opsætning (nu bundet til aktiv kurv) ───
+
+  const updateActiveCartConfig = (updater: (cart: CartProfile) => CartProfile) => {
+    setCarts(prev => prev.map(c => c.id === activeCartId ? updater(c) : c));
   };
 
   // Tilføj butik
   const addShop = () => {
     if (!newShopName.trim()) return;
-    setShops(prev => [...prev, { id: uid(), name: newShopName }]);
+    const newShop = { id: uid(), name: newShopName };
+    updateActiveCartConfig(c => ({ ...c, shops: [...(c.shops || INITIAL_SHOPS), newShop] }));
     setNewShopName('');
   };
 
   // Slet butik
   const deleteShop = (shopId: string) => {
     if (shopId === 'random') return; // "Tilfældig" kan ikke slettes
-    setShops(prev => prev.filter(s => s.id !== shopId));
+    updateActiveCartConfig(c => ({ ...c, shops: (c.shops || INITIAL_SHOPS).filter((s: Shop) => s.id !== shopId) }));
   };
 
   // Tilføj vare til skabelon
   const addTemplateItem = () => {
     if (!newItemName.trim()) return;
     const newItem: Item = { id: uid(), name: newItemName, category: newItemCat, checked: false };
-    setTemplateItems(prev => [...prev, newItem]);
+    updateActiveCartConfig(c => ({ ...c, templateItems: [...(c.templateItems || ITEM_TEMPLATES), newItem] }));
     setAvailableItems(prev => [...prev, newItem]);
     setNewItemName('');
   };
 
   // Slet vare fra skabelon
   const deleteTemplateItem = (itemId: string) => {
-    setTemplateItems(prev => prev.filter(i => i.id !== itemId));
-    setAvailableItems(prev => prev.filter(i => i.id !== itemId));
+    updateActiveCartConfig(c => ({ ...c, templateItems: (c.templateItems || ITEM_TEMPLATES).filter((i: Item) => i.id !== itemId) }));
+    setAvailableItems(prev => prev.filter((i: Item) => i.id !== itemId));
   };
 
   // Redigér vare i skabelon
   const saveEditItem = (itemId: string) => {
     if (!editItemName.trim()) return;
-    setTemplateItems(prev => prev.map(i => i.id === itemId ? { ...i, name: editItemName } : i));
-    setAvailableItems(prev => prev.map(i => i.id === itemId ? { ...i, name: editItemName } : i));
+    updateActiveCartConfig(c => ({
+      ...c,
+      templateItems: (c.templateItems || ITEM_TEMPLATES).map((i: Item) => i.id === itemId ? { ...i, name: editItemName } : i)
+    }));
+    setAvailableItems(prev => prev.map((i: Item) => i.id === itemId ? { ...i, name: editItemName } : i));
     setEditingItem(null);
     setEditItemName('');
   };
@@ -392,13 +535,13 @@ function App() {
   // Tilføj kategori
   const addCategory = () => {
     if (!newCatName.trim() || categories.includes(newCatName)) return;
-    setCategories(prev => [...prev, newCatName]);
+    updateActiveCartConfig(c => ({ ...c, categories: [...(c.categories || DEFAULT_CATEGORIES), newCatName] }));
     setNewCatName('');
   };
 
   // Slet kategori
   const deleteCategory = (cat: string) => {
-    setCategories(prev => prev.filter(c => c !== cat));
+    updateActiveCartConfig(c => ({ ...c, categories: (c.categories || DEFAULT_CATEGORIES).filter((cCat: string) => cCat !== cat) }));
   };
 
   // ─── RENDER: Velkomstside ───
@@ -484,9 +627,9 @@ function App() {
         <p style={{ fontSize: '0.85rem', opacity: 0.6, marginTop: 0 }}>Del dit BrugerID med andre for at dele din indkøbskurv</p>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
           <code style={{ background: 'rgba(0,0,0,0.05)', padding: '10px 14px', borderRadius: '10px', flex: 1, fontSize: '1.1rem', letterSpacing: '1px' }}>
-            {activeCart.userId || 'Opret profil først'}
+            {activeCart.id === 'mine' ? currentUserId : (activeCart.userId || 'Opret profil først')}
           </code>
-          <button onClick={() => navigator.clipboard.writeText(activeCart.userId)} className="glass" style={{ padding: '10px', borderRadius: '10px', border: 'none', cursor: 'pointer' }} title="Kopier ID">
+          <button onClick={() => navigator.clipboard.writeText(activeCart.id === 'mine' ? currentUserId : activeCart.userId)} className="glass" style={{ padding: '10px', borderRadius: '10px', border: 'none', cursor: 'pointer' }} title="Kopier ID">
             📋
           </button>
         </div>
@@ -494,8 +637,72 @@ function App() {
         <p style={{ fontSize: '0.85rem', opacity: 0.6, margin: '12px 0 8px' }}>Tilføj en anden persons BrugerID for at se deres kurv</p>
         <div className="inline-form">
           <input type="text" placeholder="Indsæt BrugerID..." value={sharedUserId} onChange={e => setSharedUserId(e.target.value)} />
-          <button className="btn-primary" onClick={() => { if (sharedUserId.trim()) { alert(`BrugerID '${sharedUserId}' tilføjet! (Kræver backend)`); setSharedUserId(''); } }}>Tilføj</button>
+          <button className="btn-primary" onClick={handleSubscribe}>Tilføj</button>
         </div>
+
+        {/* Listen over folk der har adgang til MIN kurv */}
+        {(() => {
+          const me = allUsers.find(u => u.id === currentUserId);
+          const mySubscribers = (me?.subscribers || []).map(id => allUsers.find(u => u.id === id)).filter(Boolean) as User[];
+
+          return (
+            <div style={{ marginTop: '24px' }}>
+              <h4 style={{ margin: '0 0 10px 0', fontSize: '0.95rem' }}>Folk der kigger med i din kurv:</h4>
+              {mySubscribers.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {mySubscribers.map(sub => (
+                    <div key={sub.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.05)', padding: '10px 14px', borderRadius: '10px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{sub.name}</span>
+                        <span style={{ fontSize: '0.75rem', opacity: 0.6 }}>{sub.phone}</span>
+                      </div>
+                      <button
+                        onClick={() => handleRemoveSubscriber(sub.id)}
+                        style={{ border: 'none', background: 'var(--danger)', color: 'white', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
+                      >
+                        Fjern
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ opacity: 0.5, fontSize: '0.85rem', margin: 0, fontStyle: 'italic' }}>Ingen kigger med endnu.</p>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* Listen over folk JEG følger */}
+        {(() => {
+          const me = allUsers.find(u => u.id === currentUserId);
+          const iFollow = (me?.connectedTo || []).map(id => allUsers.find(u => u.id === id)).filter(Boolean) as User[];
+
+          return (
+            <div style={{ marginTop: '24px' }}>
+              <h4 style={{ margin: '0 0 10px 0', fontSize: '0.95rem' }}>Kurve du følger:</h4>
+              {iFollow.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {iFollow.map(target => (
+                    <div key={target.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.05)', padding: '10px 14px', borderRadius: '10px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{target.name}</span>
+                        <span style={{ fontSize: '0.75rem', opacity: 0.6 }}>{target.phone}</span>
+                      </div>
+                      <button
+                        onClick={() => handleUnsubscribe(target.id)}
+                        style={{ border: 'none', background: 'var(--danger)', color: 'white', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
+                      >
+                        Stop følg
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ opacity: 0.5, fontSize: '0.85rem', margin: 0, fontStyle: 'italic' }}>Du følger ikke nogen kurve endnu.</p>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Flere indkøbskurve */}
@@ -504,7 +711,7 @@ function App() {
         <p style={{ fontSize: '0.85rem', opacity: 0.6, marginTop: 0 }}>Vælg aktiv kurv eller opret en ny (f.eks. til din mor)</p>
         <div className="chip-list">
           {carts.map(c => (
-            <div key={c.id} className={`chip glass ${c.id === activeCartId ? 'btn-primary' : ''}`} style={{ cursor: 'pointer' }} onClick={() => setActiveCartId(c.id)}>
+            <div key={c.id} className={`chip glass ${c.id === activeCartId ? 'btn-primary' : ''} `} style={{ cursor: 'pointer' }} onClick={() => setActiveCartId(c.id)}>
               <span>{c.name}</span>
               {c.id !== 'mine' && <button className="delete-chip" onClick={e => { e.stopPropagation(); deleteCart(c.id); }}>×</button>}
             </div>
@@ -656,7 +863,7 @@ function App() {
       {carts.length > 1 && (
         <div className="cart-selector">
           {carts.map(c => (
-            <button key={c.id} className={`glass ${c.id === activeCartId ? 'btn-primary' : ''}`} onClick={() => setActiveCartId(c.id)}>
+            <button key={c.id} className={`glass ${c.id === activeCartId ? 'btn-primary' : ''} `} onClick={() => setActiveCartId(c.id)}>
               {c.name}
             </button>
           ))}
@@ -665,7 +872,7 @@ function App() {
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '28px' }}>
         {shops.map(shop => (
-          <button key={shop.id} className={`glass ${selectedShop?.id === shop.id ? 'btn-primary' : ''}`}
+          <button key={shop.id} className={`glass ${selectedShop?.id === shop.id ? 'btn-primary' : ''} `}
             style={{ padding: '22px', borderRadius: '20px', border: 'none', cursor: 'pointer', fontSize: '1.05rem', fontWeight: 600 }}
             onClick={() => setSelectedShop(shop)}
           >
@@ -740,7 +947,7 @@ function App() {
         {carts.length > 1 && (
           <div className="cart-selector">
             {carts.map(c => (
-              <button key={c.id} className={`glass ${c.id === activeCartId ? 'btn-primary' : ''}`} onClick={() => setActiveCartId(c.id)}>
+              <button key={c.id} className={`glass ${c.id === activeCartId ? 'btn-primary' : ''} `} onClick={() => setActiveCartId(c.id)}>
                 {c.name}
               </button>
             ))}
@@ -749,9 +956,9 @@ function App() {
 
         {/* Butiks-filter */}
         <div className="filter-pills">
-          <button className={`filter-pill glass ${filterShop === 'all' ? 'btn-primary' : ''}`} onClick={() => setFilterShop('all')}>Alle</button>
+          <button className={`filter - pill glass ${filterShop === 'all' ? 'btn-primary' : ''} `} onClick={() => setFilterShop('all')}>Alle</button>
           {shops.map(s => (
-            <button key={s.id} className={`filter-pill glass ${filterShop === s.id ? 'btn-primary' : ''}`} onClick={() => setFilterShop(s.id)}>
+            <button key={s.id} className={`filter - pill glass ${filterShop === s.id ? 'btn-primary' : ''} `} onClick={() => setFilterShop(s.id)}>
               {s.name}
             </button>
           ))}
@@ -759,7 +966,7 @@ function App() {
 
         {filteredItems.length === 0 ? (
           <div className="glass" style={{ padding: '40px', borderRadius: '20px', textAlign: 'center', opacity: 0.6 }}>
-            {filterShop === 'all' ? 'Din kurv er tom' : `Ingen varer fra ${shops.find(s => s.id === filterShop)?.name}`}
+            {filterShop === 'all' ? 'Din kurv er tom' : `Ingen varer fra ${shops.find(s => s.id === filterShop)?.name} `}
           </div>
         ) : (
           Object.entries(grouped).map(([shopName, shopItems]) => (
@@ -794,115 +1001,226 @@ function App() {
         Din profil er oprettet og afventer admin-godkendelse. Du får besked via WhatsApp, når du kan handle.
       </p>
 
-      {/* Skjult Admin-adgang (mock) for at kunne teste flowet */}
+      {currentUserRole === 'admin' && (
+        <button
+          style={{
+            background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 600,
+            fontSize: '0.9rem', cursor: 'pointer', padding: '10px'
+          }}
+          onClick={() => {
+            setUserStatus('approved');
+            setActiveTab('admin');
+          }}
+        >
+          Åbn Admin Panel
+        </button>
+      )}
+
       <button
+        onClick={handleLogout}
         style={{
-          background: 'none', border: 'none', color: 'inherit', opacity: 0.1,
+          background: 'none', border: 'none', color: 'inherit', opacity: 0.4,
           fontSize: '0.8rem', cursor: 'pointer', padding: '20px'
         }}
-        onClick={() => setIsAdminView(true)}
       >
-        [ Åbn Prototype Admin Panel ]
+        Log ud
       </button>
 
       <style>{`
-        @keyframes spin { 100% { transform: rotate(360deg); } }
-      `}</style>
+@keyframes spin { 100 % { transform: rotate(360deg); } }
+`}</style>
     </div>
   );
 
-  // ─── RENDER: Admin Panel (Mock) ───
-  const renderAdminPanel = () => (
-    <div className="container" style={{ paddingTop: '40px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h2 style={{ margin: 0 }}>Admin Panel</h2>
-        <button
-          className="glass"
-          style={{ padding: '8px 16px', borderRadius: '12px', border: 'none', cursor: 'pointer' }}
-          onClick={() => setIsAdminView(false)}
-        >
-          Luk
-        </button>
+  // ─── RENDER: Admin Panel ───
+  const renderAdminPanel = () => {
+    const pending = allUsers.filter(u => u.status === 'pending');
+    const approved = allUsers.filter(u => u.status === 'approved');
+
+    const updateDB = (users: User[]) => {
+      localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
+      setAllUsers(users);
+    };
+
+    const handleApprove = (user: User) => {
+      const cleanPhone = user.phone.replace(/[^0-9]/g, '');
+      const msg = encodeURIComponent(`Hej ${user.name} !Din profil på 'handl' er nu godkendt. ✅\nDu kan nu handle videre på: https://handl.junkerne.dk`);
+      window.open(`https://wa.me/${cleanPhone}?text=${msg}`, '_blank');
+
+      const updated = allUsers.map(u => u.id === user.id ? { ...u, status: 'approved' as const } : u);
+      updateDB(updated);
+    };
+
+    const handleDelete = (id: string, name: string) => {
+      if (!window.confirm(`Er du sikker på at du vil slette ${name}?`)) return;
+      const updated = allUsers.filter(u => u.id !== id);
+      updateDB(updated);
+    };
+
+    const handleEdit = (user: User) => {
+      const newName = window.prompt("Nyt navn:", user.name);
+      if (!newName) return;
+      const newPhone = window.prompt("Nyt tlf:", user.phone);
+      if (!newPhone) return;
+
+      const updated = allUsers.map(u => u.id === user.id ? { ...u, name: newName, phone: newPhone } : u);
+      updateDB(updated);
+    };
+
+    const handleResetPw = async (id: string) => {
+      const newPw = window.prompt("Indtast ny adgangskode for brugeren:");
+      if (!newPw) return;
+      const hashed = await hashPassword(newPw);
+      const updated = allUsers.map(u => u.id === id ? { ...u, hashedPassword: hashed } : u);
+      updateDB(updated);
+      alert("Adgangskode nulstillet!");
+    };
+
+    const handleCreateUser = async () => {
+      const name = window.prompt("Fuldt navn:");
+      if (!name) return;
+      const phone = window.prompt("Telefonnummer:");
+      if (!phone) return;
+      const pw = window.prompt("Adgangskode:");
+      if (!pw) return;
+
+      const hashed = await hashPassword(pw);
+      const newUser: User = {
+        id: generateUserId(),
+        name,
+        phone,
+        hashedPassword: hashed,
+        time: new Date().toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' }),
+        status: 'approved',
+        role: 'user'
+      };
+
+      updateDB([...allUsers, newUser]);
+      alert("Bruger oprettet og godkendt automatisk.");
+    };
+
+    const displayUserRow = (u: User) => (
+      <div key={u.id} className="glass" style={{ padding: '16px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <p style={{ fontWeight: 600, margin: '0 0 4px 0', fontSize: '1.05rem' }}>
+              {u.name} {u.id === currentUserId && <span style={{ fontSize: '0.75rem', backgroundColor: 'var(--primary)', padding: '2px 6px', borderRadius: '6px', marginLeft: '6px' }}>Dig</span>}
+              {u.role === 'admin' && <span style={{ fontSize: '0.75rem', backgroundColor: '#666', color: 'white', padding: '2px 6px', borderRadius: '6px', marginLeft: '6px' }}>Admin</span>}
+            </p>
+            <p style={{ opacity: 0.6, margin: 0, fontSize: '0.85rem' }}>{u.phone} • {u.time}</p>
+            {/* Netværksindblik for admin */}
+            {((u.subscribers && u.subscribers.length > 0) || (u.connectedTo && u.connectedTo.length > 0)) && (
+              <div style={{ marginTop: '8px', fontSize: '0.8rem', background: 'rgba(0,0,0,0.03)', padding: '8px', borderRadius: '8px' }}>
+                {u.connectedTo && u.connectedTo.length > 0 && (
+                  <div style={{ marginBottom: '4px' }}>
+                    <span style={{ opacity: 0.6 }}>Følger:</span> {u.connectedTo.map(id => allUsers.find(a => a.id === id)?.name || 'Slettet').join(', ')}
+                  </div>
+                )}
+                {u.subscribers && u.subscribers.length > 0 && (
+                  <div>
+                    <span style={{ opacity: 0.6 }}>Følges af:</span> {u.subscribers.map(id => allUsers.find(a => a.id === id)?.name || 'Slettet').join(', ')}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {u.status === 'pending' && <button className="btn-primary" style={{ flex: 1, padding: '8px', fontSize: '0.85rem' }} onClick={() => handleApprove(u)}>Godkend</button>}
+          <button className="glass" style={{ flex: 1, padding: '8px', fontSize: '0.85rem' }} onClick={() => handleEdit(u)}>✏️ Ret</button>
+          <button className="glass" style={{ flex: 1, padding: '8px', fontSize: '0.85rem' }} onClick={() => handleResetPw(u.id)}>🔑 Kode</button>
+          <button style={{ flex: 1, padding: '8px', fontSize: '0.85rem', background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '12px', cursor: 'pointer' }} onClick={() => handleDelete(u.id, u.name)}>Slet</button>
+        </div>
       </div>
+    );
 
-      <p style={{ opacity: 0.6, marginBottom: '30px' }}>
-        Godkend eller afvis nye brugere. (Når du godkender din egen nyoprettede testbruger, får du adgang til appen).
-      </p>
-
-      {pendingUsers.length === 0 ? (
-        <div className="glass" style={{ padding: '40px', borderRadius: '20px', textAlign: 'center', opacity: 0.6 }}>
-          Ingen brugere afventer just nu
+    return (
+      <div className="container" style={{ paddingTop: '20px', paddingBottom: '80px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <h2 style={{ margin: 0 }}>Brugere ({allUsers.length})</h2>
+          <button className="btn-primary" style={{ padding: '8px 16px', fontSize: '0.9rem' }} onClick={handleCreateUser}>
+            + Opret
+          </button>
         </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          {pendingUsers.map(u => (
-            <div key={u.id} className="glass" style={{ padding: '20px', borderRadius: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <p style={{ fontWeight: 600, margin: '0 0 4px 0', fontSize: '1.1rem' }}>
-                  {u.name} {u.id === currentUserId && <span style={{ fontSize: '0.75rem', backgroundColor: 'var(--primary)', padding: '2px 6px', borderRadius: '6px', marginLeft: '6px' }}>Dig</span>}
-                </p>
-                <p style={{ opacity: 0.6, margin: 0, fontSize: '0.85rem' }}>{u.phone} • {u.time}</p>
-              </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  style={{ background: 'var(--danger)', color: 'white', border: 'none', width: '40px', height: '40px', borderRadius: '12px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center' }}
-                  onClick={() => setPendingUsers(prev => prev.filter(user => user.id !== u.id))}
-                >
-                  ✕
-                </button>
-                <button
-                  style={{ background: 'var(--success)', color: 'white', border: 'none', height: '40px', padding: '0 16px', borderRadius: '12px', cursor: 'pointer', fontWeight: 600 }}
-                  onClick={() => {
-                    // Åbn WhatsApp med forudfyldt besked
-                    const cleanPhone = u.phone.replace(/[^0-9]/g, '');
-                    const msg = encodeURIComponent(`Hej ${u.name}! Din profil på 'handl' er nu godkendt. ✅\nDu kan nu handle videre på: https://handl.junkerne.dk`);
-                    window.open(`https://wa.me/${cleanPhone}?text=${msg}`, '_blank');
 
-                    // Opdater localStorage database at denne bruger er approved
-                    try {
-                      const usersRaw = localStorage.getItem(USERS_STORAGE_KEY) || '[]';
-                      const users = JSON.parse(usersRaw);
-                      const updatedUsers = users.map((dbUser: any) => {
-                        if (dbUser.id === u.id) return { ...dbUser, status: 'approved' };
-                        return dbUser;
-                      });
-                      localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updatedUsers));
-                    } catch (e) { console.error(e); }
+        {/* ─── NETVÆRKSKORT ─── */}
+        <div style={{ marginBottom: '30px', background: 'rgba(0,0,0,0.03)', padding: '20px', borderRadius: '20px', border: '1px solid rgba(0,0,0,0.05)' }}>
+          <h3 style={{ fontSize: '0.9rem', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '1px', margin: '0 0 16px 0' }}>Netværk / Fælles kurve</h3>
 
-                    setPendingUsers(prev => prev.filter(user => user.id !== u.id));
-                    if (u.id === currentUserId) {
-                      setUserStatus('approved');
-                      setActiveTab('shop');
-                      setIsAdminView(false);
-                    }
-                  }}
-                >
-                  Godkend
-                </button>
-              </div>
+          {approved.filter(u => u.subscribers && u.subscribers.length > 0).length === 0 ? (
+            <p style={{ opacity: 0.5, fontSize: '0.85rem', margin: 0, fontStyle: 'italic' }}>Ingen aktive delinger endnu.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {approved.filter(u => u.subscribers && u.subscribers.length > 0).map(host => (
+                <div key={`net-${host.id}`} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {/* Ejeren af kurven */}
+                  <div style={{ background: 'var(--primary)', color: 'white', padding: '10px 16px', borderRadius: '12px', width: 'fit-content', fontWeight: 600, fontSize: '0.9rem' }}>
+                    🛒 {host.name}'s kurv
+                  </div>
+
+                  {/* Pile og abonnenter */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginLeft: '20px', borderLeft: '2px solid rgba(0,0,0,0.1)', paddingLeft: '16px' }}>
+                    {host.subscribers!.map(subId => {
+                      const sub = allUsers.find(u => u.id === subId);
+                      return sub ? (
+                        <div key={`sub-${host.id}-${subId}`} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ color: 'rgba(0,0,0,0.3)', fontSize: '1.2rem' }}>↳</span>
+                          <div style={{ background: 'rgba(255,255,255,0.8)', border: '1px solid rgba(0,0,0,0.05)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            👀 <span style={{ fontWeight: 500 }}>{sub.name}</span> kigger med
+                          </div>
+                        </div>
+                      ) : null;
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
-      )}
-    </div>
-  );
 
-  if (isAdminView) return <main>{renderAdminPanel()}</main>;
+        {pending.length > 0 && (
+          <div style={{ marginBottom: '30px' }}>
+            <h3 style={{ fontSize: '0.9rem', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '12px' }}>Afventer Godkendelse ({pending.length})</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {pending.map(displayUserRow)}
+            </div>
+          </div>
+        )}
+
+        <div style={{ marginBottom: '40px' }}>
+          <h3 style={{ fontSize: '0.9rem', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '12px' }}>Godkendte Brugere ({approved.length})</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {approved.map(displayUserRow)}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (userStatus === 'pending') return <main>{renderPending()}</main>;
+
+  const currentUser = allUsers.find(u => u.id === currentUserId);
 
   return (
     <>
       <main>
+        {userStatus === 'approved' && currentUser && (
+          <div style={{ maxWidth: '600px', margin: '0 auto', padding: '15px 20px 0', display: 'flex', justifyContent: 'flex-end', opacity: 0.5, fontSize: '0.8rem' }}>
+            <span>Logget ind som <strong>{currentUser.name.trim()}</strong></span>
+          </div>
+        )}
         {userStatus === 'guest' && renderWelcome()}
         {userStatus === 'approved' && activeTab === 'settings' && renderSettings()}
         {userStatus === 'approved' && activeTab === 'cart' && renderCart()}
         {userStatus === 'approved' && activeTab === 'shop' && renderShop()}
+        {userStatus === 'approved' && activeTab === 'admin' && currentUserRole === 'admin' && renderAdminPanel()}
       </main>
 
       {userStatus === 'approved' && (
         <BottomNav
-          activeTab={activeTab as 'settings' | 'cart' | 'shop'}
+          activeTab={activeTab as 'settings' | 'cart' | 'shop' | 'admin'}
           onTabChange={tab => setActiveTab(tab)}
+          isAdmin={currentUserRole === 'admin'}
         />
       )}
 

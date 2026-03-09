@@ -1,3 +1,15 @@
+export interface User {
+    id: string;
+    name: string;
+    phone: string;
+    hashedPassword?: string;
+    time: string;
+    status: 'guest' | 'pending' | 'approved';
+    role?: 'admin' | 'user';
+    connectedTo?: string[];
+    subscribers?: string[];
+}
+
 export interface Item {
     id: string;
     name: string;
@@ -18,6 +30,9 @@ export interface CartProfile {
     name: string;
     userId: string;
     items: Item[];
+    shops?: Shop[];
+    templateItems?: Item[];
+    categories?: string[];
 }
 
 export const DEFAULT_CATEGORIES = [
