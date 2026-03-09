@@ -33,7 +33,7 @@ function App() {
   const lastAdminAction = useRef(0);
   const [activeTab, setActiveTab] = useState<Tab>('welcome');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [version] = useState('v1.1.2');
+  const [version] = useState('v1.1.3');
 
   // Login view toggle
   const [isLoginView, setIsLoginView] = useState(false);
@@ -728,7 +728,7 @@ function App() {
   // ─── RENDER: Velkomstside ───
   const renderWelcome = () => (
     <div className="container" style={{ textAlign: 'center', paddingTop: '80px' }}>
-      <h1 style={{ fontSize: '3rem', fontWeight: 800, marginBottom: '0.5rem' }}>handl.</h1>
+      <h1 style={{ fontSize: '3rem', fontWeight: 800, marginBottom: '0.5rem' }}>handl</h1>
       <p style={{ opacity: 0.7, fontSize: '1.2rem', marginBottom: '40px' }}>Din personlige indkøbsliste</p>
 
       {isLoginView ? (
