@@ -18,9 +18,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             });
         }
 
-        // Gem brugeren
+        // Gem eller opdatér brugeren
         await context.env.DB.prepare(
-            "INSERT INTO users (id, name, phone, hashedPassword, status, role, time) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO users (id, name, phone, hashedPassword, status, role, time) VALUES (?, ?, ?, ?, ?, ?, ?) " +
+            "ON CONFLICT(id) DO UPDATE SET name=excluded.name, phone=excluded.phone, hashedPassword=excluded.hashedPassword, status=excluded.status, role=excluded.role, time=excluded.time"
         ).bind(
             user.id,
             user.name,
@@ -35,7 +36,8 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
         if (user.connectedTo && Array.isArray(user.connectedTo)) {
             const statements = user.connectedTo.map((targetId: string) =>
                 context.env.DB.prepare(
-                    "INSERT OR IGNORE INTO user_connections (follower_id, followed_id) VALUES (?, ?)"
+                    "INSERT INTO user_connections (follower_id, followed_id) VALUES (?, ?) " +
+                    "ON CONFLICT(follower_id, followed_id) DO NOTHING"
                 ).bind(user.id, targetId)
             );
             if (statements.length > 0) {
