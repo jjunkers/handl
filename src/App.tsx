@@ -108,16 +108,29 @@ function App() {
   const [activeCartId, setActiveCartId] = useState(() => loadData('handl_activeCartId', 'mine'));
   const [newCartName, setNewCartName] = useState('');
 
-  // Fælles indkøbskurv (del BrugerID)
-  const [sharedUserId, setSharedUserId] = useState('');
-
   // Sorter loginError når der skiftes view
   useEffect(() => {
     setLoginError('');
   }, [isLoginView]);
 
+  // ─── Filterede kurve (Isolation pr. bruger) ───
+  const visibleCarts = useMemo(() => {
+    const me = allUsers.find(u => u.id === currentUserId);
+    const following = me?.connectedTo || [];
+
+    return carts.filter(c => {
+      // 1. Altid vis ens egen private hovedkurv
+      if (c.id === 'mine') return true;
+      // 2. Vis sekundære kurve man selv ejer
+      if (c.userId === currentUserId || c.userId === `private_${currentUserId}`) return true;
+      // 3. Vis kurve fra folk man følger
+      if (following.includes(c.userId)) return true;
+      return false;
+    });
+  }, [carts, currentUserId, allUsers]);
+
   // Active cart references
-  const activeCart = useMemo(() => carts.find(c => c.id === activeCartId) || carts[0], [carts, activeCartId]);
+  const activeCart = useMemo(() => visibleCarts.find(c => c.id === activeCartId) || visibleCarts[0], [visibleCarts, activeCartId]);
 
   // Derived state from active cart
   const shops = activeCart?.shops || INITIAL_SHOPS;
@@ -173,7 +186,8 @@ function App() {
   // ─── Synkroniser 'mine' kurv userId med currentUserId ───
   useEffect(() => {
     if (currentUserId) {
-      setCarts(prev => prev.map(c => c.id === 'mine' ? { ...c, userId: currentUserId } : c));
+      // Sæt userId til et "private_"-præfiks, så "Min kurv" ikke deles når folk følger ens offentlige ID
+      setCarts(prev => prev.map(c => c.id === 'mine' ? { ...c, userId: `private_${currentUserId}` } : c));
     }
   }, [currentUserId]);
 
@@ -196,7 +210,7 @@ function App() {
     setPassword('');
     const newUserId = generateUserId();
     setCurrentUserId(newUserId);
-    setCarts(prev => prev.map(c => c.id === 'mine' ? { ...c, userId: newUserId } : c));
+    setCarts(prev => prev.map(c => c.id === 'mine' ? { ...c, userId: `private_${newUserId}` } : c));
 
     // Gør den første testbruger med navn "Admin" til administrator
     const role = userName.toLowerCase() === 'admin' ? 'admin' : 'user';
@@ -252,6 +266,7 @@ function App() {
       }
 
       // Login succesfuldt
+      setAllUsers(users); // Sørg for at den state-variabel opdateres STRAKS før vi skifter view
       localStorage.setItem(SESSION_STORAGE_KEY, user.id);
       setCurrentUserId(user.id);
       setUserStatus(user.status || 'guest');
@@ -259,6 +274,7 @@ function App() {
 
       if (user.status === 'approved') {
         setActiveTab('shop');
+        setActiveCartId('mine'); // Reset til ens egen kurv ved login
       } else {
         setActiveTab('welcome'); // Show pending view
       }
@@ -272,6 +288,7 @@ function App() {
     setCurrentUserId('');
     setCurrentUserRole('user');
     setActiveTab('welcome');
+    setActiveCartId('mine'); // Reset til ens egen kurv ved logout
     setIsLoginView(true); // Gør det let at logge ind igen
     setLoginPhone('');
     setLoginPassword('');
@@ -279,50 +296,7 @@ function App() {
   };
 
   // ─── Forbindelser (Deling) ───
-  const handleSubscribe = () => {
-    const trimmedId = sharedUserId.trim();
-    if (!trimmedId) return;
-
-    // Find brugeren vi prøver at abonnere på (ignorér whitespace)
-    const targetUser = allUsers.find(u => u.id === trimmedId);
-    if (!targetUser) {
-      alert(`Kunne ikke finde bruger med ID: "${trimmedId}"`);
-      return;
-    }
-
-    if (targetUser.id === currentUserId) {
-      alert("Du kan ikke abonnere på dig selv 🙂");
-      return;
-    }
-
-    // Tjek om vi allerede abonnerer
-    const currentUser = allUsers.find(u => u.id === currentUserId);
-    if (currentUser?.connectedTo?.includes(targetUser.id)) {
-      alert("Du følger allerede denne kurv.");
-      return;
-    }
-
-    // Opdater begge profiler (aktuel bruger får connectedTo, targetUser får subscriber)
-    const updatedUsers = allUsers.map(u => {
-      if (u.id === currentUserId) {
-        return { ...u, connectedTo: [...(u.connectedTo || []), targetUser.id] };
-      }
-      if (u.id === targetUser.id) {
-        return { ...u, subscribers: [...(u.subscribers || []), currentUserId] };
-      }
-      return u;
-    });
-
-    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updatedUsers));
-    setAllUsers(updatedUsers);
-
-    // Opret en lokal kurv specielt til dette link (mock)
-    const newCart: CartProfile = { id: uid(), name: `${targetUser.name.split(' ')[0]}s kurv`, userId: targetUser.id, items: [] };
-    setCarts(prev => [...prev, newCart]);
-
-    setSharedUserId('');
-    alert(`Du følger nu ${targetUser.name} !`);
-  };
+  // Slet koden for sharedUserId da vi nu bruger addCart til dette
 
   const handleRemoveSubscriber = (subscriberId: string) => {
     const subscriber = allUsers.find(u => u.id === subscriberId);
@@ -460,9 +434,50 @@ function App() {
 
   // Tilføj ny kurv
   const addCart = () => {
-    if (!newCartName.trim()) return;
-    const newCart: CartProfile = { id: uid(), name: newCartName, userId: generateUserId(), items: [] };
+    const trimmedInput = newCartName.trim();
+    if (!trimmedInput) return;
+
+    // Tjek om inputtet faktisk er et gyldigt BrugerID for en delt kurv
+    const targetUser = allUsers.find(u => u.id === trimmedInput);
+
+    if (targetUser) {
+      if (targetUser.id === currentUserId) {
+        alert("Du kan ikke tilføje dig selv som din egen eksterne kurv 🙂");
+        return;
+      }
+      const currentUser = allUsers.find(u => u.id === currentUserId);
+      if (currentUser?.connectedTo?.includes(targetUser.id)) {
+        alert("Du følger allerede denne persons kurv.");
+        return;
+      }
+      // Opret forbindelse
+      const updatedUsers = allUsers.map(u => {
+        if (u.id === currentUserId) return { ...u, connectedTo: [...(u.connectedTo || []), targetUser.id] };
+        if (u.id === targetUser.id) return { ...u, subscribers: [...(u.subscribers || []), currentUserId] };
+        return u;
+      });
+      localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updatedUsers));
+      setAllUsers(updatedUsers);
+
+      const newSharedCart: CartProfile = { id: uid(), name: `${targetUser.name.split(' ')[0]}s kurv`, userId: targetUser.id, items: [] };
+      setCarts(prev => [...prev, newSharedCart]);
+      setNewCartName('');
+      alert(`Du følger nu ${targetUser.name} !`);
+      return;
+    }
+
+    // Ellers opret en almindelig lokal kurv (som deles offentligt under dit ID *hvis* andre følger dig)
+    const newCart: CartProfile = {
+      id: uid(),
+      name: trimmedInput,
+      userId: currentUserId, // Brug det "offentlige" ID, så følgere kan se denne sekundære kurv
+      items: [],
+      shops: INITIAL_SHOPS,
+      categories: DEFAULT_CATEGORIES,
+      templateItems: ITEM_TEMPLATES
+    };
     setCarts(prev => [...prev, newCart]);
+    setActiveCartId(newCart.id);
     setNewCartName('');
   };
 
@@ -633,12 +648,7 @@ function App() {
             📋
           </button>
         </div>
-        <hr className="separator" />
-        <p style={{ fontSize: '0.85rem', opacity: 0.6, margin: '12px 0 8px' }}>Tilføj en anden persons BrugerID for at se deres kurv</p>
-        <div className="inline-form">
-          <input type="text" placeholder="Indsæt BrugerID..." value={sharedUserId} onChange={e => setSharedUserId(e.target.value)} />
-          <button className="btn-primary" onClick={handleSubscribe}>Tilføj</button>
-        </div>
+        {/* Fjernet gammelt Tilføj BrugerID input */}
 
         {/* Listen over folk der har adgang til MIN kurv */}
         {(() => {
@@ -710,7 +720,7 @@ function App() {
         <h3>Mine indkøbskurve</h3>
         <p style={{ fontSize: '0.85rem', opacity: 0.6, marginTop: 0 }}>Vælg aktiv kurv eller opret en ny (f.eks. til din mor)</p>
         <div className="chip-list">
-          {carts.map(c => (
+          {visibleCarts.map(c => (
             <div key={c.id} className={`chip glass ${c.id === activeCartId ? 'btn-primary' : ''} `} style={{ cursor: 'pointer' }} onClick={() => setActiveCartId(c.id)}>
               <span>{c.name}</span>
               {c.id !== 'mine' && <button className="delete-chip" onClick={e => { e.stopPropagation(); deleteCart(c.id); }}>×</button>}
@@ -724,8 +734,8 @@ function App() {
           </div>
         )}
         <div className="inline-form">
-          <input type="text" placeholder="Ny kurv (f.eks. Mors kurv)..." value={newCartName} onChange={e => setNewCartName(e.target.value)} />
-          <button className="btn-primary" onClick={addCart}>Opret</button>
+          <input type="text" placeholder="Nyt kurvnavn ELLER BrugerID" value={newCartName} onChange={e => setNewCartName(e.target.value)} />
+          <button className="btn-primary" onClick={addCart}>Tilføj</button>
         </div>
       </div>
 
@@ -860,9 +870,9 @@ function App() {
       <h2 style={{ marginBottom: '20px' }}>Butikker</h2>
 
       {/* Kurv-vælger */}
-      {carts.length > 1 && (
+      {visibleCarts.length > 1 && (
         <div className="cart-selector">
-          {carts.map(c => (
+          {visibleCarts.map(c => (
             <button key={c.id} className={`glass ${c.id === activeCartId ? 'btn-primary' : ''} `} onClick={() => setActiveCartId(c.id)}>
               {c.name}
             </button>
@@ -954,9 +964,9 @@ function App() {
         <h2 style={{ marginBottom: '20px' }}>Indkøbskurv</h2>
 
         {/* Kurv-vælger */}
-        {carts.length > 1 && (
+        {visibleCarts.length > 1 && (
           <div className="cart-selector">
-            {carts.map(c => (
+            {visibleCarts.map(c => (
               <button key={c.id} className={`glass ${c.id === activeCartId ? 'btn-primary' : ''} `} onClick={() => setActiveCartId(c.id)}>
                 {c.name}
               </button>
