@@ -1323,6 +1323,16 @@ function App() {
       alert("Bruger oprettet og godkendt automatisk.");
     };
 
+    const handleToggleRole = (user: User) => {
+      if (user.id === currentUserId) {
+        alert("Du kan ikke fjerne din egen admin-rolle herfra.");
+        return;
+      }
+      const newRole = user.role === 'admin' ? 'user' : 'admin';
+      const updated = allUsers.map(u => u.id === user.id ? { ...u, role: newRole as any } : u);
+      updateDB(updated);
+    };
+
     const displayUserRow = (u: User) => (
       <div key={u.id} className="glass" style={{ padding: '16px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -1352,6 +1362,7 @@ function App() {
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           {u.status === 'pending' && <button className="btn-primary" style={{ flex: 1, padding: '8px', fontSize: '0.85rem' }} onClick={() => handleApprove(u)}>Godkend</button>}
           <button className="glass" style={{ flex: 1, padding: '8px', fontSize: '0.85rem' }} onClick={() => handleEdit(u)}>✏️ Ret</button>
+          <button className="glass" style={{ flex: 1, padding: '8px', fontSize: '0.85rem' }} onClick={() => handleToggleRole(u)}>🛡️ {u.role === 'admin' ? 'Gør til Bruger' : 'Gør til Admin'}</button>
           <button className="glass" style={{ flex: 1, padding: '8px', fontSize: '0.85rem' }} onClick={() => handleResetPw(u.id)}>🔑 Kode</button>
           <button style={{ flex: 1, padding: '8px', fontSize: '0.85rem', background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '12px', cursor: 'pointer' }} onClick={() => handleDelete(u.id, u.name)}>Slet</button>
         </div>
