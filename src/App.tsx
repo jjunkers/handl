@@ -273,8 +273,9 @@ function App() {
         }));
       }
 
-    } catch (e) {
-      console.error("Sync error:", e);
+    } catch (err) {
+      console.error("Sync fejlede", err);
+      throw err; // Rethrow så kaldere kan fange fejlen
     }
   }, [currentUserId, userStatus]);
 
@@ -1300,6 +1301,8 @@ function App() {
         }
       });
 
+      console.log("Migrerer:", { localUsers, localCarts, allItems });
+
       try {
         await handleSync({
           users: localUsers,
@@ -1327,9 +1330,9 @@ function App() {
 
         alert(`Migration færdig! ${localUsers.length} brugere, ${localCarts.length} kurve og ${allItems.length} varer blev overført.`);
         handleSync(); // Refresh efter migration
-      } catch (e) {
+      } catch (e: any) {
         console.error("Migration fejlede", e);
-        alert("Der opstod en fejl under migrationen.");
+        alert("Der opstod en fejl under migrationen: " + (e.message || "Ukendt fejl"));
       }
     };
 
