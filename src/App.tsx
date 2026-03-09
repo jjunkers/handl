@@ -35,10 +35,11 @@ function App() {
   const lastAdminAction = useRef(0);
   const [activeTab, setActiveTab] = useState<Tab>('welcome');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [version] = useState('v1.1.7');
+  const [version] = useState('v1.1.9');
 
   // Default cart state
   const [defaultCartId, setDefaultCartId] = useState<string>('mine');
+  const [isInitialized, setIsInitialized] = useState(false);
 
   // Login view toggle
   const [isLoginView, setIsLoginView] = useState(false);
@@ -209,7 +210,7 @@ function App() {
   }, [currentUserId]);
 
   // ─── Cloud Sync ───
-  const handleSync = useCallback(async (pushData?: { carts?: CartProfile[], items?: Item[], connections?: any[], deletedConnections?: any[], deletedCarts?: string[], users?: User[] }) => {
+  const handleSync = useCallback(async (pushData?: { carts?: CartProfile[], items?: Item[], connections?: any[], deletedConnections?: any[], deletedCarts?: string[], deletedItems?: string[], users?: User[] }) => {
     if (!currentUserId || userStatus !== 'approved') return;
 
     try {
@@ -297,31 +298,26 @@ function App() {
 
   // ─── Initial Data Fetch ───
   useEffect(() => {
-    if (userStatus === 'approved' && currentUserId) {
+    if (userStatus === 'approved' && currentUserId && !isInitialized) {
       handleSync().then(() => {
-        // Vælg aktiv kurv baseret på defaultCartId, ellers 'mine'
-        const storedDefault = localStorage.getItem(DEFAULT_CART_KEY);
-        if (storedDefault) setDefaultCartId(storedDefault);
-
-        // Når data er hentet, og vi har carts
-        setCarts(prevCarts => {
-          if (prevCarts && prevCarts.length > 0) {
-            const targetCart = storedDefault || defaultCartId;
-            const cartExists = prevCarts.some(c => c.id === targetCart);
-            if (cartExists) {
-              setActiveCartId(targetCart);
-            } else {
-              setActiveCartId('mine');
-            }
-          } else {
-            setActiveCartId('mine');
-          }
-          return prevCarts;
-        });
-
+        setIsInitialized(true);
       });
     }
-  }, [userStatus, currentUserId]);
+  }, [userStatus, currentUserId, isInitialized]);
+
+  // ─── Apply Default Cart after Initial Sync ───
+  useEffect(() => {
+    if (isInitialized && carts.length > 0) {
+      const storedDefault = localStorage.getItem(DEFAULT_CART_KEY);
+      if (storedDefault) {
+        setDefaultCartId(storedDefault);
+        const cartExists = carts.some(c => c.id === storedDefault);
+        if (cartExists) {
+          setActiveCartId(storedDefault);
+        }
+      }
+    }
+  }, [isInitialized]); // Kun når isInitialized skifter til true (og carts er landet)
 
   // ─── Automatisk push til skyen ved ændringer ───
   useEffect(() => {
@@ -657,12 +653,8 @@ function App() {
       return prev;
     });
 
-    // Sync sletning af vare til skyen for den aktive kurv
-    const updatedActiveCart = {
-      ...activeCart,
-      items: activeCart.items.filter(i => i.id !== itemId)
-    };
-    handleSync({ carts: [updatedActiveCart] });
+    // Sync sletning af vare direkte til skyen
+    handleSync({ deletedItems: [itemId] });
   };
 
   // Tilføj ny kurv
