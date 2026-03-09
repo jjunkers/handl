@@ -1,0 +1,53 @@
+Indkøbsliste
+Brugerstyring
+- Brugere skal kunne oprette sig selv
+- Admin skal godkende en tilmeldt bruger
+- Der sendes en whatsapp besked når der godkendes
+- Bruger skal udfylde Navn, Efternavn, Telefonnummer (med landekode)
+- Når brugeren er oprettet skal der oprettes et brugerID som systemet skal danne. Det skal være
+8 tegn med store og små bogstaver, tal, og specialtegn men kun disse tegn ><@()!
+
+- BrugerID skal bruges til sammenkobling af fælles indkøbslister (lister)
+- Hvis en bruger ønsker at der skal kobles andre på ens indkøbskurv skal man have en knap
+
+under indstillinger til fælles indkøbskurv og når man trykker på den skal brugerID vises med et
+kopi ikon og man kan så indsætte brugerID’et i en besked og sende til den der skal deles
+indkøbskurv med og hvis der er flere der skal på så sender man bare brugerID’et til flere.
+- Der skal være mulighed for flere indkøbskurve hvis man f.eks. skal købe ind for ens gamle mor.
+I indstillinger kan man så vælge ens egen indkøbskurv eller anden indkøbskurv. I anden
+indkøbskurv skal er også være mulighed for at have et brugerID til deling med andre men ikke
+det samme brugerID for så vil det konflikte.
+
+Webapp
+- Siden oprettes som webapp.
+- Single page
+- Opdateres hvert 10 sekund da der skal laves en form for notifikation
+- Hvis der er kommet nye versioner af siden skal siden genindlæser når man er på næste gang
+- Der skal vises versionsnumre på velkomstsiden som automatisk skifter hver gang der bliver
+noget deployer på den oﬀentlige side handl.junkerne.dk (v1.0.0 skal være første version)
+
+Opbygning
+- Når man åbner siden skal den altid starte på velkomstsiden.
+- Der skal være runde knapper i bunden af siden.
+- Der skal være en knap i venstre side til indstillinger med et ikon af et tandhjul
+- I midten en lidt større knap med et indkøbskurv ikon
+- Til højre en knap på samme størrelse som indstillinger knap med et ikon der forstiller en butik
+- Ikoner skal være i sort hvide
+- Siden skal have et mørkt tema og et lyst tema som skal kunne slåes til og fra i indstillinger
+- I indstillinger skal der også være mulighed for at skifte adgangskode ved alle brugere
+- I indstillinger skal der være en indstilling for skabelon til varer
+- Der skal være en standard skabelon som er oprettet på forhånd men brugerne kan selv rette,
+
+slette og tilføje varer og overskrifter til varegrupper (Mælkeprodukter, Bager, Rengøringsartikler
+osv.)
+- I indstillinger skal der også være en indstillinger for oprettelse af butikker (Netto, Føtex osv.)
+- I den knap der er til højre der hedder Butik skal de oprettede butikker være og her skal der for
+hver butik være vare skabelonen. Når man så har valgt en vare ved en butik skal denne vare
+ikke være at se i en anden butik. Under butik skal der også være en “Tilfældig” butik som altid
+skal være der. Så når man har valgt f.eks. mælk i Netto så skal den ikke vises i butik ved Føtex
+eller andre butikker heller ikke “Tilfældig”. Når man så er færdig med at vælge varer i butik vises
+disse varer i indkøbskurv under de forskellige butikker. Her skal det være muligt at filtrere på de
+enkelte butikker. Der skal være et felt til at sætte flueben i en vare man har taget og 2 sekunder
+senere forsvinder den i indkøbskurven. Nu dukker den op i butik igen.
+
+
