@@ -33,7 +33,7 @@ function App() {
   const lastAdminAction = useRef(0);
   const [activeTab, setActiveTab] = useState<Tab>('welcome');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [version] = useState('v1.1.0');
+  const [version] = useState('v1.1.1');
 
   // Login view toggle
   const [isLoginView, setIsLoginView] = useState(false);
@@ -1109,6 +1109,24 @@ function App() {
 
           {/* Kategori-vælger */}
           <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', marginBottom: '20px', paddingBottom: '10px', scrollbarWidth: 'none' }}>
+            <button
+              className={`glass ${newItemCat === 'all' && !shopSearchQuery ? 'active' : ''}`}
+              style={{
+                padding: '10px 18px',
+                borderRadius: '14px',
+                whiteSpace: 'nowrap',
+                fontWeight: 600,
+                fontSize: '0.9rem',
+                border: (newItemCat === 'all' && !shopSearchQuery) ? '2px solid var(--primary)' : '1px solid rgba(0,0,0,0.05)',
+                color: (newItemCat === 'all' && !shopSearchQuery) ? 'var(--primary)' : 'inherit'
+              }}
+              onClick={() => {
+                setNewItemCat('all');
+                setShopSearchQuery('');
+              }}
+            >
+              Alle varer
+            </button>
             {categories.map(cat => (
               <button
                 key={cat}
@@ -1136,7 +1154,7 @@ function App() {
             <div className="glass" style={{ padding: '30px', borderRadius: '20px', textAlign: 'center', opacity: 0.6 }}>Alle varer er allerede i kurven</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {(shopSearchQuery ? filteredTemplates : availableItems.filter(i => i.category === newItemCat)).map(item => {
+              {(shopSearchQuery ? filteredTemplates : (newItemCat === 'all' ? availableItems : availableItems.filter(i => i.category === newItemCat))).map(item => {
                 const isInCart = activeCart.items.some(ci => ci.id === item.id);
                 if (isInCart) return null;
                 return (
