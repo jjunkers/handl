@@ -355,20 +355,39 @@ function App() {
     try {
       const inputHash = await hashPassword(loginPassword.trim());
 
-      // 1. Login via D1 API
-      const res = await fetch('/api/auth/login', {
+      // 1. Prøv først D1 API
+      let res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: loginPhone.trim(), hashedPassword: inputHash })
       });
 
+      let user: User | null = null;
+
       if (!res.ok) {
-        const err = await res.json() as any;
-        setLoginError(err.error || "Login fejlede");
-        return;
+        // Hvis ikke fundet i D1, tjek localStorage (Migration Fallback)
+        const usersRaw = localStorage.getItem(USERS_STORAGE_KEY) || '[]';
+        const localUsers: User[] = JSON.parse(usersRaw);
+        const localUser = localUsers.find(u => u.phone.trim() === loginPhone.trim() && u.hashedPassword === inputHash);
+
+        if (localUser) {
+          // Migrér brugeren til D1 med det samme
+          await fetch('/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(localUser)
+          });
+          user = localUser;
+        } else {
+          const err = await res.json() as any;
+          setLoginError(err.error || "Login fejlede");
+          return;
+        }
+      } else {
+        user = await res.json();
       }
 
-      const user = await res.json() as any;
+      if (!user) return;
 
       // Login succesfuldt
       localStorage.setItem(SESSION_STORAGE_KEY, user.id);
@@ -1174,24 +1193,41 @@ function App() {
     const pending = allUsers.filter(u => u.status === 'pending');
     const approved = allUsers.filter(u => u.status === 'approved');
 
-    const updateDB = (users: User[]) => {
+    const updateDB = async (users: User[]) => {
       localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
       setAllUsers(users);
+
+      // Sync hver ændring med D1
+      for (const u of users) {
+        await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(u)
+        });
+      }
     };
 
-    const handleApprove = (user: User) => {
+    const handleApprove = async (user: User) => {
       const cleanPhone = user.phone.replace(/[^0-9]/g, '');
       const msg = encodeURIComponent(`Hej ${user.name} !Din profil på 'handl' er nu godkendt. ✅\nDu kan nu handle videre på: https://handl.junkerne.dk`);
       window.open(`https://wa.me/${cleanPhone}?text=${msg}`, '_blank');
 
       const updated = allUsers.map(u => u.id === user.id ? { ...u, status: 'approved' as const } : u);
-      updateDB(updated);
+      await updateDB(updated);
     };
 
-    const handleDelete = (id: string, name: string) => {
+    const handleDelete = async (id: string, name: string) => {
       if (!window.confirm(`Er du sikker på at du vil slette ${name}?`)) return;
-      const updated = allUsers.filter(u => u.id !== id);
-      updateDB(updated);
+
+      try {
+        await fetch('/api/auth/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id })
+        });
+        const updated = allUsers.filter(u => u.id !== id);
+        updateDB(updated);
+      } catch (e) { console.error("Kunne ikke slette", e); }
     };
 
     const handleEdit = (user: User) => {
@@ -1211,6 +1247,33 @@ function App() {
       const updated = allUsers.map(u => u.id === id ? { ...u, hashedPassword: hashed } : u);
       updateDB(updated);
       alert("Adgangskode nulstillet!");
+    };
+
+    const handleMigrateUsers = async () => {
+      const usersRaw = localStorage.getItem(USERS_STORAGE_KEY) || '[]';
+      const localUsers: User[] = JSON.parse(usersRaw);
+
+      if (localUsers.length === 0) {
+        alert("Ingen lokale brugere fundet at migrere.");
+        return;
+      }
+
+      if (!window.confirm(`Vil du uploade ${localUsers.length} lokale brugere til databasen?`)) return;
+
+      let count = 0;
+      for (const u of localUsers) {
+        try {
+          await fetch('/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(u)
+          });
+          count++;
+        } catch (e) { console.error("Kunne ikke migrere", u.name, e); }
+      }
+
+      alert(`Migration færdig! ${count} brugere blev overført.`);
+      handleSync();
     };
 
     const handleCreateUser = async () => {
@@ -1273,11 +1336,16 @@ function App() {
 
     return (
       <div className="container" style={{ paddingTop: '20px', paddingBottom: '80px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', gap: '10px' }}>
           <h2 style={{ margin: 0 }}>Brugere ({allUsers.length})</h2>
-          <button className="btn-primary" style={{ padding: '8px 16px', fontSize: '0.9rem' }} onClick={handleCreateUser}>
-            + Opret
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="glass" style={{ padding: '8px 12px', fontSize: '0.8rem' }} onClick={handleMigrateUsers} title="Migrér lokale brugere til skyen">
+              ☁️ Migrér
+            </button>
+            <button className="btn-primary" style={{ padding: '8px 16px', fontSize: '0.9rem' }} onClick={handleCreateUser}>
+              + Opret
+            </button>
+          </div>
         </div>
 
         {/* ─── NETVÆRKSKORT ─── */}
