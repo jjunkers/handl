@@ -776,6 +776,23 @@ function App() {
   );
 
   // ─── RENDER: Indstillinger ───
+  const handleResetToDefaults = () => {
+    if (!window.confirm("Vil du nulstille alle varegrupper og vareskabeloner til de nye standarder? Dette letter din personlige opsætning, men fjerner eventuelle egne rettelser i vareskabelonerne.")) return;
+
+    setCarts(prev => prev.map(c => {
+      if (c.id === 'mine' || c.userId === currentUserId || c.userId === `private_${currentUserId}`) {
+        return {
+          ...c,
+          categories: DEFAULT_CATEGORIES,
+          templateItems: ITEM_TEMPLATES
+        };
+      }
+      return c;
+    }));
+
+    alert("Varegrupper og skabeloner er nu nulstillet til de nye standarder. Du kan se dem under 'Butik' næste gang du tilføjer en vare.");
+  };
+
   const renderSettings = () => (
     <div className="container">
       <h2 style={{ marginBottom: '20px' }}>Indstillinger</h2>
@@ -789,6 +806,20 @@ function App() {
             <div className="toggle-knob" style={{ left: isDarkMode ? '27px' : '3px' }} />
           </button>
         </div>
+      </div>
+
+      {/* Varedatabase */}
+      <div className="glass settings-section">
+        <h3>Varedatabase</h3>
+        <p style={{ fontSize: '0.85rem', opacity: 0.6, marginBottom: '16px', lineHeight: 1.4 }}>
+          Hvis du mangler de nyeste standard varegrupper (Mælkeprodukter, Frost, Snacks osv.) eller de nye vareskabeloner, kan du nulstille din personlige opsætning herunder.
+        </p>
+        <button className="glass" style={{ width: '100%', padding: '12px', fontWeight: 600, color: 'var(--primary)' }} onClick={() => {
+          handleResetToDefaults();
+          handleSync();
+        }}>
+          🔄 Nulstil til nye standarder
+        </button>
       </div>
 
       {/* Fælles indkøbskurv */}
