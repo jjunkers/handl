@@ -33,7 +33,7 @@ function App() {
   const lastAdminAction = useRef(0);
   const [activeTab, setActiveTab] = useState<Tab>('welcome');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [version] = useState('v1.1.3');
+  const [version] = useState('v1.1.4');
 
   // Login view toggle
   const [isLoginView, setIsLoginView] = useState(false);
@@ -598,6 +598,27 @@ function App() {
     }
   };
 
+  // Slet vare helt fra kurven (uden at 'købe' den)
+  const deleteItemFromCart = (itemId: string) => {
+    // Slet timer hvis der var en
+    if (checkTimers.current[itemId]) {
+      clearTimeout(checkTimers.current[itemId]);
+      delete checkTimers.current[itemId];
+    }
+    setCarts(prev => prev.map(c =>
+      c.id === activeCartId
+        ? { ...c, items: c.items.filter(i => i.id !== itemId) }
+        : c
+    ));
+    setAvailableItems(prev => {
+      const itemToRestore = activeCart.items.find(i => i.id === itemId);
+      if (itemToRestore && !prev.some(i => i.id === itemId)) {
+        return [...prev, { ...itemToRestore, checked: false, shopId: undefined }];
+      }
+      return prev;
+    });
+  };
+
   // Tilføj ny kurv
   const addCart = () => {
     const trimmedInput = newCartName.trim();
@@ -695,10 +716,19 @@ function App() {
     setNewItemName('');
   };
 
-  // Slet vare fra skabelon
+  // Slet vare fra skabelon (og kaskadér til aktive kurve)
   const deleteTemplateItem = (itemId: string) => {
-    updateActiveCartConfig(c => ({ ...c, templateItems: (c.templateItems || ITEM_TEMPLATES).filter((i: Item) => i.id !== itemId) }));
+    updateActiveCartConfig(c => ({
+      ...c,
+      templateItems: (c.templateItems || ITEM_TEMPLATES).filter((i: Item) => i.id !== itemId)
+    }));
     setAvailableItems(prev => prev.filter((i: Item) => i.id !== itemId));
+
+    // Slet også varen fra alle aktive kurve (hvis den ligger der)
+    setCarts(prev => prev.map(c => ({
+      ...c,
+      items: c.items.filter(i => i.id !== itemId)
+    })));
   };
 
   // Redigér vare i skabelon
@@ -845,7 +875,22 @@ function App() {
             📋
           </button>
         </div>
-        {/* Fjernet gammelt Tilføj BrugerID input */}
+
+        <div style={{ marginBottom: '20px' }}>
+          <h4 style={{ margin: '0 0 10px 0', fontSize: '0.95rem' }}>Tilføj en delt kurv:</h4>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <input
+              type="text"
+              placeholder="Indtast BrugerID her"
+              value={newCartName}
+              onChange={(e) => setNewCartName(e.target.value)}
+              style={{ flex: 1, padding: '12px 14px', borderRadius: '14px', border: '1px solid rgba(0,0,0,0.1)', outline: 'none', background: 'white' }}
+            />
+            <button onClick={addCart} className="btn-primary" style={{ padding: '0 20px', borderRadius: '14px', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
+              Følg
+            </button>
+          </div>
+        </div>
 
         {/* Listen over folk der har adgang til MIN kurv */}
         {(() => {
@@ -1365,8 +1410,15 @@ function App() {
                           {shopPrefix && <span style={{ opacity: 0.5, marginLeft: '6px', fontSize: '0.85rem' }}>({shopPrefix})</span>}
                           {item.quantity ? <span style={{ opacity: 0.5, marginLeft: '8px', fontSize: '0.85rem' }}>[{item.quantity}]</span> : ''}
                         </span>
-                        <input type="checkbox" checked={item.checked} onChange={() => toggleItemInCart(item.id)}
-                          style={{ width: '22px', height: '22px', cursor: 'pointer', accentColor: 'var(--primary)' }} />
+                        <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
+                          <button
+                            onClick={() => deleteItemFromCart(item.id)}
+                            style={{ background: 'none', border: 'none', color: 'var(--danger)', fontSize: '1.2rem', cursor: 'pointer', opacity: 0.6 }}
+                            title="Fjern vare fra kurven"
+                          >✕</button>
+                          <input type="checkbox" checked={item.checked} onChange={() => toggleItemInCart(item.id)}
+                            style={{ width: '22px', height: '22px', cursor: 'pointer', accentColor: 'var(--primary)' }} />
+                        </div>
                       </div>
                     );
                   })}
@@ -1435,6 +1487,24 @@ function App() {
         : users;
 
       handleSync({ users: toSync });
+    };
+
+    const syncAllLegacyConnections = () => {
+      if (!window.confirm("Vil du synkronisere alle lokalt gemte forbindelser (subscribers/connectedTo) op i skyen? Dette gøres normalt kun én gang efter migration.")) return;
+      const connections: { follower_id: string, followed_id: string }[] = [];
+      allUsers.forEach(u => {
+        if (u.connectedTo && Array.isArray(u.connectedTo)) {
+          u.connectedTo.forEach(targetId => {
+            connections.push({ follower_id: u.id, followed_id: targetId });
+          });
+        }
+      });
+      if (connections.length > 0) {
+        handleSync({ connections });
+        alert(`${connections.length} forbindelser sendt til skyen!`);
+      } else {
+        alert("Ingen legacy forbindelser at synkronisere.");
+      }
     };
 
     const handleApprove = async (user: User) => {
@@ -1555,6 +1625,9 @@ function App() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', gap: '10px' }}>
           <h2 style={{ margin: 0 }}>Brugere ({allUsers.length})</h2>
           <div style={{ display: 'flex', gap: '8px' }}>
+            <button className="glass" style={{ padding: '8px 16px', fontSize: '0.9rem', opacity: 0.7 }} onClick={syncAllLegacyConnections} title="Synkroniser lokale forbindelser til skyen">
+              🔄 Sync Forbindelser
+            </button>
             <button className="btn-primary" style={{ padding: '8px 16px', fontSize: '0.9rem' }} onClick={handleCreateUser}>
               + Opret
             </button>
