@@ -12,9 +12,15 @@ export interface User {
 
 export interface Item {
     id: string;
+    cartId?: string;
+    userId?: string;
     name: string;
     category: string;
     checked: boolean;
+    shop?: string;
+    amount?: string;
+    time?: string;
+    // For bagudkompatibilitet under migration
     shopId?: string;
     lastCheckedAt?: number;
     quantity?: string;

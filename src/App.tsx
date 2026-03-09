@@ -1279,29 +1279,58 @@ function App() {
 
     const handleMigrateUsers = async () => {
       const usersRaw = localStorage.getItem(USERS_STORAGE_KEY) || '[]';
+      const cartsRaw = localStorage.getItem('handl_carts') || '[]';
       const localUsers: User[] = JSON.parse(usersRaw);
+      const localCarts: CartProfile[] = JSON.parse(cartsRaw);
 
-      if (localUsers.length === 0) {
-        alert("Ingen lokale brugere fundet at migrere.");
+      if (localUsers.length === 0 && localCarts.length === 0) {
+        alert("Ingen lokale data fundet at migrere.");
         return;
       }
 
-      if (!window.confirm(`Vil du uploade ${localUsers.length} lokale brugere til databasen?`)) return;
+      if (!window.confirm(`Vil du uploade ${localUsers.length} brugere og ${localCarts.length} kurve til databasen?`)) return;
 
-      let count = 0;
-      for (const u of localUsers) {
-        try {
-          await fetch('/api/auth/register', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(u)
+      // Saml alle varer fra alle kurve
+      const allItems: Item[] = [];
+      localCarts.forEach(cart => {
+        if (cart.items) {
+          cart.items.forEach(item => {
+            allItems.push({ ...item, cartId: cart.id, userId: cart.userId });
           });
-          count++;
-        } catch (e) { console.error("Kunne ikke migrere", u.name, e); }
-      }
+        }
+      });
 
-      alert(`Migration færdig! ${count} brugere blev overført.`);
-      handleSync();
+      try {
+        await handleSync({
+          users: localUsers,
+          carts: localCarts,
+          items: allItems,
+          // Vi kan ikke sende connections direkte nemt her, da de ligger inde i User objekterne i localStorage
+          // Men sync.ts i Cloudflare Functions kan udpakke dem hvis vi vil, 
+          // ELLER vi kan stole på at register API i sync.ts allerede håndterer det hvis vi sender users.
+        });
+
+        // Da register API og sync API er lidt forskellige, sikrer vi os at connections også kommer med
+        // ved at sende dem eksplicit hvis de findes
+        const allConnections: any[] = [];
+        localUsers.forEach(u => {
+          if (u.connectedTo) {
+            u.connectedTo.forEach(targetId => {
+              allConnections.push({ follower_id: u.id, followed_id: targetId });
+            });
+          }
+        });
+
+        if (allConnections.length > 0) {
+          await handleSync({ connections: allConnections });
+        }
+
+        alert(`Migration færdig! ${localUsers.length} brugere, ${localCarts.length} kurve og ${allItems.length} varer blev overført.`);
+        handleSync(); // Refresh efter migration
+      } catch (e) {
+        console.error("Migration fejlede", e);
+        alert("Der opstod en fejl under migrationen.");
+      }
     };
 
     const handleCreateUser = async () => {

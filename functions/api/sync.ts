@@ -65,44 +65,53 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
         const statements = [];
 
+        // Check afsenderens rolle
+        const sender = await context.env.DB.prepare("SELECT role FROM users WHERE id = ?").bind(userId).first() as any;
+        const isAdmin = sender?.role === 'admin';
+
         // Opdater brugere
         for (const user of (users || [])) {
-            statements.push(
-                context.env.DB.prepare(`
-          INSERT INTO users (id, name, phone, hashedPassword, status, role, time) 
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(id) DO UPDATE SET 
-            name=excluded.name, 
-            phone=excluded.phone, 
-            hashedPassword=excluded.hashedPassword, 
-            status=excluded.status, 
-            role=excluded.role, 
-            time=excluded.time
-        `).bind(
-                    user.id,
-                    user.name,
-                    user.phone,
-                    user.hashedPassword,
-                    user.status,
-                    user.role,
-                    user.time
-                )
-            );
+            if (isAdmin) {
+                statements.push(
+                    context.env.DB.prepare(`
+              INSERT INTO users (id, name, phone, hashedPassword, status, role, time) 
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(id) DO UPDATE SET 
+                name=excluded.name, 
+                phone=excluded.phone, 
+                hashedPassword=excluded.hashedPassword, 
+                status=excluded.status, 
+                role=excluded.role, 
+                time=excluded.time
+            `).bind(
+                        user.id,
+                        user.name,
+                        user.phone,
+                        user.hashedPassword,
+                        user.status,
+                        user.role,
+                        user.time
+                    )
+                );
+            }
         }
 
         // Opdater kurve
-        // ... (uforandret logic herunder)
         for (const cart of (carts || [])) {
-            if (cart.userId === userId || cart.userId === `private_${userId}`) {
+            const isOwner = cart.userId === userId || cart.userId === `private_${userId}`;
+            if (isOwner || isAdmin) {
+                // Ved migration bruger vi cart.userId som owner_id
+                const ownerId = isAdmin ? (cart.userId?.replace('private_', '') || userId) : userId;
+
                 statements.push(
                     context.env.DB.prepare(`
             INSERT INTO carts (id, name, owner_id, config) 
             VALUES (?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET name=excluded.name, config=excluded.config
+            ON CONFLICT(id) DO UPDATE SET name=excluded.name, config=excluded.config, owner_id=excluded.owner_id
           `).bind(
                         cart.id,
                         cart.name,
-                        userId,
+                        ownerId,
                         JSON.stringify({
                             shops: cart.shops,
                             categories: cart.categories,
@@ -113,30 +122,40 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
             }
         }
 
-        // Opdater items
+        // Opdater varer
         for (const item of (items || [])) {
-            statements.push(
-                context.env.DB.prepare(`
-          INSERT INTO cart_items (id, cart_id, name, category, checked, shop_id, last_checked_at, quantity)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(id) DO UPDATE SET 
-            name=excluded.name, 
-            category=excluded.category, 
-            checked=excluded.checked, 
-            shop_id=excluded.shop_id, 
-            last_checked_at=excluded.last_checked_at, 
-            quantity=excluded.quantity
-        `).bind(
-                    item.id,
-                    item.cartId || item.shopId, // Midlertidig fix hvis frontend sender shopId som cartId ref
-                    item.name,
-                    item.category,
-                    item.checked ? 1 : 0,
-                    item.shopId,
-                    item.lastCheckedAt || null,
-                    item.quantity || null
-                )
-            );
+            // Vi antager at hvis man har lov til at pushe kurven, har man også lov til at pushe dens varer
+            // For nemhedens skyld tjekker vi isAdmin eller ejerskab hvis userId findes på varen
+            const isOwner = !item.userId || item.userId === userId || item.userId === `private_${userId}`;
+
+            if (isOwner || isAdmin) {
+                const ownerId = isAdmin ? (item.userId?.replace('private_', '') || userId) : userId;
+                statements.push(
+                    context.env.DB.prepare(`
+            INSERT INTO cart_items (id, cart_id, user_id, name, shop, amount, category, bought, time)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              cart_id=excluded.cart_id,
+              user_id=excluded.user_id,
+              name=excluded.name,
+              shop=excluded.shop,
+              amount=excluded.amount,
+              category=excluded.category,
+              bought=excluded.bought,
+              time=excluded.time
+          `).bind(
+                        item.id,
+                        item.cartId,
+                        ownerId,
+                        item.name,
+                        item.shop,
+                        item.amount,
+                        item.category,
+                        item.bought ? 1 : 0,
+                        item.time
+                    )
+                );
+            }
         }
 
         // Opdater forbindelser
