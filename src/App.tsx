@@ -1217,12 +1217,16 @@ function App() {
     const pending = allUsers.filter(u => u.status === 'pending');
     const approved = allUsers.filter(u => u.status === 'approved');
 
-    const updateDB = async (users: User[]) => {
+    const updateDB = async (users: User[], changedUserIds?: string[]) => {
       localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
       setAllUsers(users);
 
-      // Sync hver ændring med D1
-      for (const u of users) {
+      // Sync kun de ændrede brugere med D1 (eller alle hvis ingen liste er givet)
+      const toSync = changedUserIds
+        ? users.filter(u => changedUserIds.includes(u.id))
+        : users;
+
+      for (const u of toSync) {
         await fetch('/api/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1237,7 +1241,7 @@ function App() {
       window.open(`https://wa.me/${cleanPhone}?text=${msg}`, '_blank');
 
       const updated = allUsers.map(u => u.id === user.id ? { ...u, status: 'approved' as const } : u);
-      await updateDB(updated);
+      await updateDB(updated, [user.id]);
     };
 
     const handleDelete = async (id: string, name: string) => {
@@ -1250,18 +1254,19 @@ function App() {
           body: JSON.stringify({ id })
         });
         const updated = allUsers.filter(u => u.id !== id);
-        updateDB(updated);
+        localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updated));
+        setAllUsers(updated);
       } catch (e) { console.error("Kunne ikke slette", e); }
     };
 
-    const handleEdit = (user: User) => {
+    const handleEdit = async (user: User) => {
       const newName = window.prompt("Nyt navn:", user.name);
       if (!newName) return;
       const newPhone = window.prompt("Nyt tlf:", user.phone);
       if (!newPhone) return;
 
       const updated = allUsers.map(u => u.id === user.id ? { ...u, name: newName, phone: newPhone } : u);
-      updateDB(updated);
+      await updateDB(updated, [user.id]);
     };
 
     const handleResetPw = async (id: string) => {
@@ -1269,7 +1274,7 @@ function App() {
       if (!newPw) return;
       const hashed = await hashPassword(newPw);
       const updated = allUsers.map(u => u.id === id ? { ...u, hashedPassword: hashed } : u);
-      updateDB(updated);
+      await updateDB(updated, [id]);
       alert("Adgangskode nulstillet!");
     };
 
@@ -1330,7 +1335,7 @@ function App() {
       }
       const newRole = user.role === 'admin' ? 'user' : 'admin';
       const updated = allUsers.map(u => u.id === user.id ? { ...u, role: newRole as any } : u);
-      updateDB(updated);
+      updateDB(updated, [user.id]);
     };
 
     const displayUserRow = (u: User) => (
