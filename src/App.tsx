@@ -33,7 +33,7 @@ function App() {
   const lastAdminAction = useRef(0);
   const [activeTab, setActiveTab] = useState<Tab>('welcome');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [version] = useState('v1.1.4');
+  const [version] = useState('v1.1.5');
 
   // Login view toggle
   const [isLoginView, setIsLoginView] = useState(false);
@@ -204,7 +204,7 @@ function App() {
   }, [currentUserId]);
 
   // ─── Cloud Sync ───
-  const handleSync = useCallback(async (pushData?: { carts?: CartProfile[], items?: Item[], connections?: any[], users?: User[] }) => {
+  const handleSync = useCallback(async (pushData?: { carts?: CartProfile[], items?: Item[], connections?: any[], deletedConnections?: any[], users?: User[] }) => {
     if (!currentUserId || userStatus !== 'approved') return;
 
     try {
@@ -481,6 +481,9 @@ function App() {
 
     localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updatedUsers));
     setAllUsers(updatedUsers);
+
+    // Sync deletion til skyen
+    handleSync({ deletedConnections: [{ follower_id: subscriberId, followed_id: currentUserId }] });
   };
 
   const handleUnsubscribe = (targetUserId: string) => {
@@ -500,6 +503,9 @@ function App() {
 
     localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(updatedUsers));
     setAllUsers(updatedUsers);
+
+    // Sync deletion til skyen
+    handleSync({ deletedConnections: [{ follower_id: currentUserId, followed_id: targetUserId }] });
 
     // Fjern også den lokale kurv
     const cartToRemove = carts.find(c => c.userId === targetUserId && c.id !== 'mine');
@@ -649,6 +655,10 @@ function App() {
       const newSharedCart: CartProfile = { id: uid(), name: `${targetUser.name.split(' ')[0]}s kurv`, userId: targetUser.id, items: [] };
       setCarts(prev => [...prev, newSharedCart]);
       setNewCartName('');
+
+      // Sync forbindelsen til skyen med det samme
+      handleSync({ connections: [{ follower_id: currentUserId, followed_id: targetUser.id }] });
+
       alert(`Du følger nu ${targetUser.name} !`);
       return;
     }

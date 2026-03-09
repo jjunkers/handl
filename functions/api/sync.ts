@@ -71,7 +71,7 @@ export const onRequestGet: PagesFunction<Env> = async (context: any) => {
 
 export const onRequestPost: PagesFunction<Env> = async (context: any) => {
     try {
-        const { userId, carts, items, connections, users } = await context.request.json() as any;
+        const { userId, carts, items, connections, deletedConnections, users } = await context.request.json() as any;
 
         if (!userId) return new Response("Missing userId", { status: 400 });
 
@@ -178,6 +178,19 @@ export const onRequestPost: PagesFunction<Env> = async (context: any) => {
           VALUES (?, ?)
         `).bind(conn.follower_id, conn.followed_id)
             );
+        }
+
+        // Slet fjernede forbindelser
+        for (const conn of (deletedConnections || [])) {
+            // Tillad admin at slette hvad som helst, eller kun dem brugeren selv ejer
+            if (isAdmin || conn.follower_id === userId || conn.followed_id === userId) {
+                statements.push(
+                    context.env.DB.prepare(`
+                        DELETE FROM user_connections 
+                        WHERE follower_id = ? AND followed_id = ?
+                    `).bind(conn.follower_id, conn.followed_id)
+                );
+            }
         }
 
         if (statements.length > 0) {
