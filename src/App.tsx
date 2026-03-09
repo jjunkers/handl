@@ -30,6 +30,7 @@ const USERS_STORAGE_KEY = 'handl_users';
 const SESSION_STORAGE_KEY = 'handl_session';
 
 function App() {
+  const lastAdminAction = useRef(0);
   const [activeTab, setActiveTab] = useState<Tab>('welcome');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [version] = useState('v1.0.0');
@@ -192,7 +193,7 @@ function App() {
   }, [currentUserId]);
 
   // ─── Cloud Sync ───
-  const handleSync = useCallback(async (pushData?: { carts?: CartProfile[], items?: Item[], connections?: any[] }) => {
+  const handleSync = useCallback(async (pushData?: { carts?: CartProfile[], items?: Item[], connections?: any[], users?: User[] }) => {
     if (!currentUserId || userStatus !== 'approved') return;
 
     try {
@@ -211,19 +212,22 @@ function App() {
 
       const cloudData = await res.json() as any;
       if (cloudData.users) {
-        setAllUsers(() => {
-          // Opbyg connectedTo og subscribers kort fra forbindelserne
-          const connections = cloudData.connections || [];
-          return cloudData.users.map((u: any) => {
-            const connectedTo = connections
-              .filter((c: any) => c.follower_id === u.id)
-              .map((c: any) => c.followed_id);
-            const subscribers = connections
-              .filter((c: any) => c.followed_id === u.id)
-              .map((c: any) => c.follower_id);
-            return { ...u, connectedTo, subscribers };
+        // Kun opdatér allUsers hvis der ikke har været en admin handling for nylig (15 sekunder)
+        if (Date.now() - lastAdminAction.current > 15000) {
+          setAllUsers(() => {
+            // Opbyg connectedTo og subscribers kort fra forbindelserne
+            const connections = cloudData.connections || [];
+            return cloudData.users.map((u: any) => {
+              const connectedTo = connections
+                .filter((c: any) => c.follower_id === u.id)
+                .map((c: any) => c.followed_id);
+              const subscribers = connections
+                .filter((c: any) => c.followed_id === u.id)
+                .map((c: any) => c.follower_id);
+              return { ...u, connectedTo, subscribers };
+            });
           });
-        });
+        }
       }
 
       // Merge kurve: Vi prioriterer skyen for delte kurve, 
@@ -1220,19 +1224,14 @@ function App() {
     const updateDB = async (users: User[], changedUserIds?: string[]) => {
       localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
       setAllUsers(users);
+      lastAdminAction.current = Date.now();
 
-      // Sync kun de ændrede brugere med D1 (eller alle hvis ingen liste er givet)
+      // Sync kun de ændrede brugere med D1 via bulk sync
       const toSync = changedUserIds
         ? users.filter(u => changedUserIds.includes(u.id))
         : users;
 
-      for (const u of toSync) {
-        await fetch('/api/auth/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(u)
-        });
-      }
+      handleSync({ users: toSync });
     };
 
     const handleApprove = async (user: User) => {

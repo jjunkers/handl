@@ -59,11 +59,36 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
     try {
-        const { userId, carts, items, connections } = await context.request.json() as any;
+        const { userId, carts, items, connections, users } = await context.request.json() as any;
 
         if (!userId) return new Response("Missing userId", { status: 400 });
 
         const statements = [];
+
+        // Opdater brugere
+        for (const user of (users || [])) {
+            statements.push(
+                context.env.DB.prepare(`
+          INSERT INTO users (id, name, phone, hashedPassword, status, role, time) 
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET 
+            name=excluded.name, 
+            phone=excluded.phone, 
+            hashedPassword=excluded.hashedPassword, 
+            status=excluded.status, 
+            role=excluded.role, 
+            time=excluded.time
+        `).bind(
+                    user.id,
+                    user.name,
+                    user.phone,
+                    user.hashedPassword,
+                    user.status,
+                    user.role,
+                    user.time
+                )
+            );
+        }
 
         // Opdater kurve
         // ... (uforandret logic herunder)
