@@ -35,7 +35,7 @@ function App() {
   const lastAdminAction = useRef(0);
   const [activeTab, setActiveTab] = useState<Tab>('welcome');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [version] = useState('v1.1.16');
+  const [version] = useState('v1.1.17');
 
   // Default cart state
   const [defaultCartId, setDefaultCartId] = useState<string>('mine');
@@ -149,8 +149,13 @@ function App() {
 
   const [newItemCat, setNewItemCat] = useState(categories[0] || '');
   const [selectedShop, setSelectedShop] = useState<Shop | null>(null);
+
   // Varer til stede i butiksvisningen (fjernes fra skabelon når valgt)
-  const [availableItems, setAvailableItems] = useState<Item[]>(activeCart?.templateItems || ITEM_TEMPLATES);
+  // Dynamisk beregnet pr. aktiv kurv (så tilføjelser i én kurv ikke påvirker de andre!)
+  const availableItems = useMemo(() => {
+    const currentCartItemIds = new Set(activeCart?.items.map(i => i.id) || []);
+    return templateItems.filter(t => !currentCartItemIds.has(t.id));
+  }, [activeCart, templateItems]);
 
   // Filtrerede skabeloner baseret på søgning
   const filteredTemplates = useMemo(() => {
@@ -606,7 +611,6 @@ function App() {
         ? { ...c, items: [...c.items, cartItem] }
         : c
     ));
-    setAvailableItems(prev => prev.filter(i => i.id !== item.id));
     // Ryd antal-input for denne vare
     setItemQuantities(prev => { const n = { ...prev }; delete n[item.id]; return n; });
   };
@@ -641,12 +645,6 @@ function App() {
           const removedItem = c.items.find(i => i.id === itemId);
           // Kun fjern hvis den stadig er markeret
           if (removedItem && removedItem.checked) {
-            setAvailableItems(ai => {
-              // Undgå dubletter: kun tilføj hvis den ikke allerede er der
-              if (ai.some(existing => existing.id === removedItem.id)) return ai;
-              return [...ai, { ...removedItem, checked: false, shopId: undefined }];
-            });
-
             // Sæt i slettekøen, så den faktisk slettes i skyen
             if (!deletedItemsQueue.current.includes(itemId)) {
               deletedItemsQueue.current.push(itemId);
@@ -675,13 +673,6 @@ function App() {
         ? { ...c, items: c.items.filter(i => i.id !== itemId) }
         : c
     ));
-    setAvailableItems(prev => {
-      const itemToRestore = activeCart.items.find(i => i.id === itemId);
-      if (itemToRestore && !prev.some(i => i.id === itemId)) {
-        return [...prev, { ...itemToRestore, checked: false, shopId: undefined }];
-      }
-      return prev;
-    });
 
     // Sæt i kø til auto-sync, i stedet for at affyre direkte.
     // Det dæmmer op for the race condition mellem slet-kaldet og auto-sync opdateringen bagefter.
@@ -791,7 +782,6 @@ function App() {
     if (!newItemName.trim()) return;
     const newItem: Item = { id: uid(), name: newItemName, category: newItemCat, checked: false };
     updateActiveCartConfig(c => ({ ...c, templateItems: [...(c.templateItems || ITEM_TEMPLATES), newItem] }));
-    setAvailableItems(prev => [...prev, newItem]);
     setNewItemName('');
   };
 
@@ -801,7 +791,6 @@ function App() {
       ...c,
       templateItems: (c.templateItems || ITEM_TEMPLATES).filter((i: Item) => i.id !== itemId)
     }));
-    setAvailableItems(prev => prev.filter((i: Item) => i.id !== itemId));
 
     // Slet også varen fra alle aktive kurve (hvis den ligger der)
     setCarts(prev => prev.map(c => ({
@@ -817,7 +806,6 @@ function App() {
       ...c,
       templateItems: (c.templateItems || ITEM_TEMPLATES).map((i: Item) => i.id === itemId ? { ...i, name: editItemName } : i)
     }));
-    setAvailableItems(prev => prev.map((i: Item) => i.id === itemId ? { ...i, name: editItemName } : i));
     setEditingItem(null);
     setEditItemName('');
   };
