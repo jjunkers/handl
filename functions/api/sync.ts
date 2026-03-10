@@ -108,6 +108,45 @@ export const onRequestPost: PagesFunction<Env> = async (context: any) => {
             }
         }
 
+        // 1. Udfør SLETNINGER først for at undgå at genindsætte slettede data fra forældet klient-state
+
+        // Slet kurve
+        for (const cartId of (deletedCarts || [])) {
+            // Tjek ejerskab eller admin før sletning
+            const cart = await context.env.DB.prepare("SELECT owner_id FROM carts WHERE id = ?").bind(cartId).first() as any;
+            if (isAdmin || (cart && cart.owner_id === userId)) {
+                statements.push(
+                    context.env.DB.prepare("DELETE FROM carts WHERE id = ?").bind(cartId)
+                );
+            }
+        }
+
+        // Slet enkelte varer
+        for (const itemId of (deletedItems || [])) {
+            // Tjek ejerskab eller admin før sletning
+            const item = await context.env.DB.prepare("SELECT user_id FROM cart_items WHERE id = ?").bind(itemId).first() as any;
+            if (isAdmin || !item || item.user_id === userId || item.user_id === `private_${userId}`) {
+                statements.push(
+                    context.env.DB.prepare("DELETE FROM cart_items WHERE id = ?").bind(itemId)
+                );
+            }
+        }
+
+        // Slet fjernede forbindelser
+        for (const conn of (deletedConnections || [])) {
+            // Tillad admin at slette hvad som helst, eller kun dem brugeren selv ejer
+            if (isAdmin || conn.follower_id === userId || conn.followed_id === userId) {
+                statements.push(
+                    context.env.DB.prepare(`
+                        DELETE FROM user_connections 
+                        WHERE follower_id = ? AND followed_id = ?
+                    `).bind(conn.follower_id, conn.followed_id)
+                );
+            }
+        }
+
+        // 2. Udfør INDSÆTTELSER / OPDATERINGER derefter
+
         // Opdater kurve
         for (const cart of (carts || [])) {
             const isOwner = cart.userId === userId || cart.userId === `private_${userId}`;
@@ -179,42 +218,6 @@ export const onRequestPost: PagesFunction<Env> = async (context: any) => {
         `).bind(conn.follower_id, conn.followed_id)
             );
         }
-
-        // Slet fjernede forbindelser
-        for (const conn of (deletedConnections || [])) {
-            // Tillad admin at slette hvad som helst, eller kun dem brugeren selv ejer
-            if (isAdmin || conn.follower_id === userId || conn.followed_id === userId) {
-                statements.push(
-                    context.env.DB.prepare(`
-                        DELETE FROM user_connections 
-                        WHERE follower_id = ? AND followed_id = ?
-                    `).bind(conn.follower_id, conn.followed_id)
-                );
-            }
-        }
-
-        // Slet kurve
-        for (const cartId of (deletedCarts || [])) {
-            // Tjek ejerskab eller admin før sletning
-            const cart = await context.env.DB.prepare("SELECT owner_id FROM carts WHERE id = ?").bind(cartId).first() as any;
-            if (isAdmin || (cart && cart.owner_id === userId)) {
-                statements.push(
-                    context.env.DB.prepare("DELETE FROM carts WHERE id = ?").bind(cartId)
-                );
-            }
-        }
-
-        // Slet enkelte varer
-        for (const itemId of (deletedItems || [])) {
-            // Tjek ejerskab eller admin før sletning
-            const item = await context.env.DB.prepare("SELECT user_id FROM cart_items WHERE id = ?").bind(itemId).first() as any;
-            if (isAdmin || !item || item.user_id === userId || item.user_id === `private_${userId}`) {
-                statements.push(
-                    context.env.DB.prepare("DELETE FROM cart_items WHERE id = ?").bind(itemId)
-                );
-            }
-        }
-
         if (statements.length > 0) {
             await context.env.DB.batch(statements);
         }

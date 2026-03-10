@@ -35,7 +35,7 @@ function App() {
   const lastAdminAction = useRef(0);
   const [activeTab, setActiveTab] = useState<Tab>('welcome');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [version] = useState('v1.1.10');
+  const [version] = useState('v1.1.12');
 
   // Default cart state
   const [defaultCartId, setDefaultCartId] = useState<string>('mine');
@@ -190,6 +190,9 @@ function App() {
   // Timeout refs for kurv-items (så de kan annulleres)
   const checkTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
+  // Kø for slettede varer (for at undgå sync race-conditions)
+  const deletedItemsQueue = useRef<string[]>([]);
+
   // Antal pr. vare (i butik, inden tilføjelse)
   const [itemQuantities, setItemQuantities] = useState<Record<string, string>>({});
 
@@ -269,11 +272,9 @@ function App() {
       }
 
       // Merge items
-      if (cloudData.items && cloudData.items.length > 0) {
+      if (cloudData.items) {
         setCarts(prev => prev.map(cart => {
           const cloudItems = cloudData.items.filter((i: any) => i.cart_id === cart.id);
-          // Kun overskriv hvis vi faktisk har data fra skyen for denne specifikke kurv
-          if (cloudItems.length === 0) return cart;
 
           return {
             ...cart,
@@ -340,7 +341,16 @@ function App() {
           }
         });
 
-        handleSync({ carts, items: allItems, connections: allConnections });
+        // Hent og tøm slettede-varer køen
+        const itemsToDelete = [...deletedItemsQueue.current];
+        deletedItemsQueue.current = [];
+
+        handleSync({
+          carts,
+          items: allItems,
+          connections: allConnections,
+          deletedItems: itemsToDelete.length > 0 ? itemsToDelete : undefined
+        });
       }, 3000);
       return () => clearTimeout(timer);
     }
@@ -653,8 +663,11 @@ function App() {
       return prev;
     });
 
-    // Sync sletning af vare direkte til skyen
-    handleSync({ deletedItems: [itemId] });
+    // Sæt i kø til auto-sync, i stedet for at affyre direkte.
+    // Det dæmmer op for the race condition mellem slet-kaldet og auto-sync opdateringen bagefter.
+    if (!deletedItemsQueue.current.includes(itemId)) {
+      deletedItemsQueue.current.push(itemId);
+    }
   };
 
   // Tilføj ny kurv
