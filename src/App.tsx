@@ -35,7 +35,7 @@ function App() {
   const lastAdminAction = useRef(0);
   const [activeTab, setActiveTab] = useState<Tab>('welcome');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [version] = useState('v1.1.17');
+  const [version] = useState('v1.1.18');
 
   // Default cart state
   const [defaultCartId, setDefaultCartId] = useState<string>('mine');
@@ -154,7 +154,7 @@ function App() {
   // Dynamisk beregnet pr. aktiv kurv (så tilføjelser i én kurv ikke påvirker de andre!)
   const availableItems = useMemo(() => {
     const currentCartItemIds = new Set(activeCart?.items.map(i => i.id) || []);
-    return templateItems.filter(t => !currentCartItemIds.has(t.id));
+    return templateItems.filter(t => !currentCartItemIds.has(t.id) && !currentCartItemIds.has(`${activeCart?.id}_${t.id}`));
   }, [activeCart, templateItems]);
 
   // Filtrerede skabeloner baseret på søgning
@@ -296,15 +296,22 @@ function App() {
 
           return {
             ...cart,
-            items: cloudItems.map((i: any) => ({
-              id: i.id,
-              name: i.name,
-              category: i.category,
-              checked: i.checked,
-              shopId: i.shop_id,
-              lastCheckedAt: i.last_checked_at,
-              quantity: i.quantity
-            }))
+            items: cloudItems.map((i: any) => {
+              // Bevar lokal state for varen, hvis en 3-sekunders-timer kører på den.
+              // Dette modvirker race-conditions hvor auto-sync overskriver brugerens friske flueben med 0.
+              const isBeingChecked = !!checkTimers.current[i.id];
+              const localItem = cart.items.find(li => li.id === i.id);
+
+              return {
+                id: i.id,
+                name: i.name,
+                category: i.category,
+                checked: (isBeingChecked && localItem) ? localItem.checked : (i.checked === 1 || i.checked === true),
+                shopId: i.shop_id,
+                lastCheckedAt: (isBeingChecked && localItem) ? localItem.lastCheckedAt : i.last_checked_at,
+                quantity: i.quantity
+              }
+            })
           };
         }));
       }
@@ -605,7 +612,12 @@ function App() {
   const addItemToCart = (item: Item) => {
     if (!selectedShop) return;
     const qty = itemQuantities[item.id] || '';
-    const cartItem = { ...item, shopId: selectedShop.id, checked: false, quantity: qty || undefined };
+
+    // Brug prefix så ID'et er unikt i databasen pr. kurv, 
+    // men vi bevarer linket til den oprindelige skabelon
+    const uniqueId = item.id.startsWith(`${activeCartId}_`) ? item.id : `${activeCartId}_${item.id}`;
+
+    const cartItem = { ...item, id: uniqueId, shopId: selectedShop.id, checked: false, quantity: qty || undefined };
     setCarts(prev => prev.map(c =>
       c.id === activeCartId
         ? { ...c, items: [...c.items, cartItem] }
@@ -795,7 +807,7 @@ function App() {
     // Slet også varen fra alle aktive kurve (hvis den ligger der)
     setCarts(prev => prev.map(c => ({
       ...c,
-      items: c.items.filter(i => i.id !== itemId)
+      items: c.items.filter(i => i.id !== itemId && i.id !== `${c.id}_${itemId}`)
     })));
   };
 
