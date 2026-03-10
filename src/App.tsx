@@ -35,7 +35,7 @@ function App() {
   const lastAdminAction = useRef(0);
   const [activeTab, setActiveTab] = useState<Tab>('welcome');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [version] = useState('v1.1.19');
+  const [version] = useState('v1.1.20');
 
   // Default cart state
   const [defaultCartId, setDefaultCartId] = useState<string>('mine');
@@ -212,24 +212,45 @@ function App() {
     document.body.classList.toggle('dark', isDarkMode);
   }, [isDarkMode]);
 
-  // ─── Migrer den gamle 'mine' kurv til en personlig D1 kurv ───
+  // ─── Migrer den gamle 'mine' kurv til en personlig D1 kurv og fjern dubletter ───
   useEffect(() => {
-    if (currentUserId && carts.some(c => c.id === 'mine')) {
-      const myUniqueId = `private_${currentUserId}`;
-      setCarts(prev => prev.map(c => {
-        if (c.id === 'mine') {
-          return {
-            ...c,
-            id: myUniqueId,
-            userId: myUniqueId,
-            items: c.items.map(i => ({
-              ...i,
-              id: i.id.startsWith('mine_') ? i.id.replace('mine_', `${myUniqueId}_`) : i.id
-            }))
-          };
-        }
-        return c;
-      }));
+    if (!currentUserId || carts.length === 0) return;
+
+    const myUniqueId = `private_${currentUserId}`;
+    let changed = false;
+    const newCarts: CartProfile[] = [];
+    const seen = new Set<string>();
+
+    carts.forEach(c => {
+      let cartId = c.id;
+      let cartObj = c;
+
+      // 1. Migrer 'mine' til 'private_xxx'
+      if (cartId === 'mine') {
+        cartId = myUniqueId;
+        cartObj = {
+          ...c,
+          id: myUniqueId,
+          userId: myUniqueId,
+          items: c.items.map(i => ({
+            ...i,
+            id: i.id.startsWith('mine_') ? i.id.replace('mine_', `${myUniqueId}_`) : i.id
+          }))
+        };
+        changed = true;
+      }
+
+      // 2. Tilføj kun hvis den ikke allerede eksisterer i vores deduplikerede liste!
+      if (!seen.has(cartId)) {
+        seen.add(cartId);
+        newCarts.push(cartObj);
+      } else {
+        changed = true; // Vi fandt en dublet (fx en 'mine' der blev lavet om til en allerede-eksisterende 'private_xxx', eller infinite loop clone)
+      }
+    });
+
+    if (changed) {
+      setCarts(newCarts);
       if (activeCartId === 'mine') setActiveCartId(myUniqueId);
       if (defaultCartId === 'mine') setDefaultCartId(myUniqueId);
     }
@@ -282,6 +303,8 @@ function App() {
         setCarts(prev => {
           const newCarts = [...prev];
           cloudData.carts.forEach((cloudCart: any) => {
+            if (cloudCart.id === 'mine') return; // SIKKERHED: Ignorer altid den globale spøgelseskurv
+
             const idx = newCarts.findIndex(c => c.id === cloudCart.id);
             const formattedCart: CartProfile = {
               id: cloudCart.id,
