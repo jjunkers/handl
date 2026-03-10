@@ -71,7 +71,7 @@ export const onRequestGet: PagesFunction<Env> = async (context: any) => {
 
 export const onRequestPost: PagesFunction<Env> = async (context: any) => {
     try {
-        const { userId, carts, items, connections, deletedConnections, deletedCarts, users } = await context.request.json() as any;
+        const { userId, carts, items, connections, deletedConnections, deletedCarts, deletedItems, users } = await context.request.json() as any;
 
         if (!userId) return new Response("Missing userId", { status: 400 });
 
@@ -200,6 +200,17 @@ export const onRequestPost: PagesFunction<Env> = async (context: any) => {
             if (isAdmin || (cart && cart.owner_id === userId)) {
                 statements.push(
                     context.env.DB.prepare("DELETE FROM carts WHERE id = ?").bind(cartId)
+                );
+            }
+        }
+
+        // Slet enkelte varer
+        for (const itemId of (deletedItems || [])) {
+            // Tjek ejerskab eller admin før sletning
+            const item = await context.env.DB.prepare("SELECT user_id FROM cart_items WHERE id = ?").bind(itemId).first() as any;
+            if (isAdmin || !item || item.user_id === userId || item.user_id === `private_${userId}`) {
+                statements.push(
+                    context.env.DB.prepare("DELETE FROM cart_items WHERE id = ?").bind(itemId)
                 );
             }
         }
