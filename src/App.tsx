@@ -35,7 +35,7 @@ function App() {
   const lastAdminAction = useRef(0);
   const [activeTab, setActiveTab] = useState<Tab>('welcome');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [version] = useState('v1.1.13');
+  const [version] = useState('v1.1.14');
 
   // Default cart state
   const [defaultCartId, setDefaultCartId] = useState<string>('mine');
@@ -193,6 +193,9 @@ function App() {
   // Kø for slettede varer (for at undgå sync race-conditions)
   const deletedItemsQueue = useRef<string[]>([]);
 
+  // Dødsliste for nyligt slettede varer (forhindrer stale D1 read-replica resurrection i 30s)
+  const deadItemsList = useRef<Record<string, number>>({});
+
   // Antal pr. vare (i butik, inden tilføjelse)
   const [itemQuantities, setItemQuantities] = useState<Record<string, string>>({});
 
@@ -274,7 +277,17 @@ function App() {
       // Merge items
       if (cloudData.items) {
         setCarts(prev => prev.map(cart => {
-          const cloudItems = cloudData.items.filter((i: any) => i.cart_id === cart.id);
+          let cloudItems = cloudData.items.filter((i: any) => i.cart_id === cart.id);
+
+          // Beskyttelse: Undlad at genindlæse varer, der er blevet slettet lokalt inden for de sidste 30 sekunder.
+          // Dette løser race-conditions med auto-sync samt enhver D1 forsinkelse.
+          cloudItems = cloudItems.filter((i: any) => {
+            const deadSince = deadItemsList.current[i.id];
+            if (deadSince && (Date.now() - deadSince < 30000)) {
+              return false;
+            }
+            return true;
+          });
 
           return {
             ...cart,
@@ -633,6 +646,13 @@ function App() {
               if (ai.some(existing => existing.id === removedItem.id)) return ai;
               return [...ai, { ...removedItem, checked: false, shopId: undefined }];
             });
+
+            // Sæt i slettekøen, så den faktisk slettes i skyen
+            if (!deletedItemsQueue.current.includes(itemId)) {
+              deletedItemsQueue.current.push(itemId);
+            }
+            deadItemsList.current[itemId] = Date.now();
+
             return { ...c, items: c.items.filter(i => i.id !== itemId) };
           }
           return c;
@@ -668,6 +688,7 @@ function App() {
     if (!deletedItemsQueue.current.includes(itemId)) {
       deletedItemsQueue.current.push(itemId);
     }
+    deadItemsList.current[itemId] = Date.now();
   };
 
   // Tilføj ny kurv
