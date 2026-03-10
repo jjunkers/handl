@@ -193,37 +193,29 @@ export const onRequestPost: PagesFunction<Env> = async (context: any) => {
         // Opdater varer
         for (const item of (items || [])) {
             // Vi antager at hvis man har lov til at pushe kurven, har man også lov til at pushe dens varer
-            // For nemhedens skyld tjekker vi isAdmin eller ejerskab hvis userId findes på varen
-            const isOwner = !item.userId || item.userId === userId || item.userId === `private_${userId}`;
-
-            if (isOwner || isAdmin) {
-                const ownerId = isAdmin ? (item.userId?.replace('private_', '') || userId) : userId;
-                statements.push(
-                    context.env.DB.prepare(`
-            INSERT INTO cart_items (id, cart_id, user_id, name, shop, amount, category, bought, time)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            statements.push(
+                context.env.DB.prepare(`
+            INSERT INTO cart_items (id, cart_id, name, shop_id, quantity, category, checked, last_checked_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
               cart_id=excluded.cart_id,
-              user_id=excluded.user_id,
               name=excluded.name,
-              shop=excluded.shop,
-              amount=excluded.amount,
+              shop_id=excluded.shop_id,
+              quantity=excluded.quantity,
               category=excluded.category,
-              bought=excluded.bought,
-              time=excluded.time
+              checked=excluded.checked,
+              last_checked_at=excluded.last_checked_at
           `).bind(
-                        item.id,
-                        item.cartId,
-                        ownerId,
-                        item.name,
-                        item.shop,
-                        item.amount,
-                        item.category,
-                        item.bought ? 1 : 0,
-                        item.time
-                    )
-                );
-            }
+                    item.id,
+                    item.cartId,
+                    item.name,
+                    item.shopId || null,
+                    item.quantity || null,
+                    item.category || null,
+                    item.checked ? 1 : 0,
+                    item.lastCheckedAt || null
+                )
+            );
         }
 
         // Opdater forbindelser
