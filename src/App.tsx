@@ -35,7 +35,7 @@ function App() {
   const lastAdminAction = useRef(0);
   const [activeTab, setActiveTab] = useState<Tab>('welcome');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [version] = useState('v1.1.18');
+  const [version] = useState('v1.1.19');
 
   // Default cart state
   const [defaultCartId, setDefaultCartId] = useState<string>('mine');
@@ -130,7 +130,7 @@ function App() {
 
     return carts.filter(c => {
       // 1. Altid vis ens egen private hovedkurv
-      if (c.id === 'mine') return true;
+      if (c.id === 'mine' || c.id === `private_${currentUserId}`) return true;
       // 2. Vis sekundære kurve man selv ejer
       if (c.userId === currentUserId || c.userId === `private_${currentUserId}`) return true;
       // 3. Vis kurve fra folk man følger
@@ -212,13 +212,31 @@ function App() {
     document.body.classList.toggle('dark', isDarkMode);
   }, [isDarkMode]);
 
-  // ─── Synkroniser 'mine' kurv userId med currentUserId ───
+  // ─── Migrer den gamle 'mine' kurv til en personlig D1 kurv ───
   useEffect(() => {
-    if (currentUserId) {
-      // Sæt userId til et "private_"-præfiks, så "Min kurv" ikke deles når folk følger ens offentlige ID
-      setCarts(prev => prev.map(c => c.id === 'mine' ? { ...c, userId: `private_${currentUserId}` } : c));
+    if (currentUserId && carts.some(c => c.id === 'mine')) {
+      const myUniqueId = `private_${currentUserId}`;
+      setCarts(prev => prev.map(c => {
+        if (c.id === 'mine') {
+          return {
+            ...c,
+            id: myUniqueId,
+            userId: myUniqueId,
+            items: c.items.map(i => ({
+              ...i,
+              id: i.id.startsWith('mine_') ? i.id.replace('mine_', `${myUniqueId}_`) : i.id
+            }))
+          };
+        }
+        return c;
+      }));
+      if (activeCartId === 'mine') setActiveCartId(myUniqueId);
+      if (defaultCartId === 'mine') setDefaultCartId(myUniqueId);
     }
-  }, [currentUserId]);
+  }, [currentUserId, carts, activeCartId, defaultCartId]);
+
+  // Den "Personlige" kurv ID (gæstefaldback vs logget ind)
+  const myCartId = currentUserId ? `private_${currentUserId}` : 'mine';
 
   // ─── Cloud Sync ───
   const handleSync = useCallback(async (pushData?: { carts?: CartProfile[], items?: Item[], connections?: any[], deletedConnections?: any[], deletedCarts?: string[], deletedItems?: string[], users?: User[] }) => {
@@ -401,7 +419,7 @@ function App() {
     setPassword('');
     const newUserId = generateUserId();
     setCurrentUserId(newUserId);
-    setCarts(prev => prev.map(c => c.id === 'mine' ? { ...c, userId: `private_${newUserId}` } : c));
+    setCarts(prev => prev.map(c => c.id === 'mine' ? { ...c, id: `private_${newUserId}`, userId: `private_${newUserId}` } : c));
 
     // Gør den første testbruger med navn "Admin" til administrator
     const role = userName.toLowerCase() === 'admin' ? 'admin' : 'user';
@@ -443,7 +461,7 @@ function App() {
       setUserStatus(newUser.status);
 
       // Push 'mine' kurv til skyen med det samme
-      handleSync({ carts: carts.map(c => c.id === 'mine' ? { ...c, userId: `private_${newUserId}` } : c) });
+      handleSync({ carts: carts.map(c => c.id === 'mine' ? { ...c, id: `private_${newUserId}`, userId: `private_${newUserId}` } : c) });
 
       if (newUser.status === 'approved') {
         setActiveTab('shop');
@@ -501,7 +519,7 @@ function App() {
 
       if (user.status === 'approved') {
         setActiveTab('shop');
-        setActiveCartId('mine');
+        setActiveCartId(`private_${user.id}`);
         handleSync(); // Hent data med det samme
       } else {
         setActiveTab('welcome');
@@ -572,10 +590,10 @@ function App() {
     handleSync({ deletedConnections: [{ follower_id: currentUserId, followed_id: targetUserId }] });
 
     // Fjern også den lokale kurv
-    const cartToRemove = carts.find(c => c.userId === targetUserId && c.id !== 'mine');
+    const cartToRemove = carts.find(c => c.userId === targetUserId && c.id !== myCartId);
     if (cartToRemove) {
       setCarts(prev => prev.filter(c => c.id !== cartToRemove.id));
-      if (activeCartId === cartToRemove.id) setActiveCartId('mine');
+      if (activeCartId === cartToRemove.id) setActiveCartId(myCartId);
     }
   };
 
@@ -749,7 +767,7 @@ function App() {
 
   // Slet kurv
   const deleteCart = (cartId: string) => {
-    if (cartId === 'mine') return; // Kan ikke slette primær kurv
+    if (cartId === myCartId) return; // Kan ikke slette primær kurv
 
     const cartToDelete = carts.find(c => c.id === cartId);
     if (cartToDelete && cartToDelete.userId) {
@@ -763,7 +781,7 @@ function App() {
     }
 
     setCarts(prev => prev.filter(c => c.id !== cartId));
-    if (activeCartId === cartId) setActiveCartId('mine');
+    if (activeCartId === cartId) setActiveCartId(myCartId);
 
     // Sync sletning til skyen
     handleSync({ deletedCarts: [cartId] });
@@ -900,7 +918,7 @@ function App() {
     if (!window.confirm("Vil du nulstille alle varegrupper og vareskabeloner til de nye standarder? Dette letter din personlige opsætning, men fjerner eventuelle egne rettelser i vareskabelonerne.")) return;
 
     setCarts(prev => prev.map(c => {
-      if (c.id === 'mine' || c.userId === currentUserId || c.userId === `private_${currentUserId}`) {
+      if (c.id === myCartId || c.userId === currentUserId || c.userId === `private_${currentUserId}`) {
         return {
           ...c,
           categories: DEFAULT_CATEGORIES,
@@ -948,9 +966,9 @@ function App() {
         <p style={{ fontSize: '0.85rem', opacity: 0.6, marginTop: 0 }}>Del dit BrugerID med andre for at dele din indkøbskurv</p>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
           <code style={{ background: 'rgba(0,0,0,0.05)', padding: '10px 14px', borderRadius: '10px', flex: 1, fontSize: '1.1rem', letterSpacing: '1px' }}>
-            {activeCart.id === 'mine' ? currentUserId : (activeCart.userId || 'Opret profil først')}
+            {activeCart.id === myCartId ? currentUserId : (activeCart.userId || 'Opret profil først')}
           </code>
-          <button onClick={() => navigator.clipboard.writeText(activeCart.id === 'mine' ? currentUserId : activeCart.userId)} className="glass" style={{ padding: '10px', borderRadius: '10px', border: 'none', cursor: 'pointer' }} title="Kopier ID">
+          <button onClick={() => navigator.clipboard.writeText(activeCart.id === myCartId ? currentUserId : activeCart.userId)} className="glass" style={{ padding: '10px', borderRadius: '10px', border: 'none', cursor: 'pointer' }} title="Kopier ID">
             📋
           </button>
         </div>
@@ -1045,7 +1063,7 @@ function App() {
             <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div className={`chip glass ${c.id === activeCartId ? 'btn-primary' : ''} `} style={{ cursor: 'pointer', flex: 1, display: 'flex', justifyContent: 'space-between' }} onClick={() => setActiveCartId(c.id)}>
                 <span>{c.name}</span>
-                {c.id !== 'mine' && <button className="delete-chip" onClick={e => { e.stopPropagation(); deleteCart(c.id); }}>×</button>}
+                {c.id !== myCartId && <button className="delete-chip" onClick={e => { e.stopPropagation(); deleteCart(c.id); }}>×</button>}
               </div>
               <button
                 onClick={() => {
@@ -1070,7 +1088,7 @@ function App() {
             </div>
           ))}
         </div>
-        {activeCartId !== 'mine' && activeCart && (
+        {activeCartId !== myCartId && activeCart && (
           <div style={{ marginTop: '12px', fontSize: '0.85rem', opacity: 0.6 }}>
             BrugerID for "{activeCart.name}": <code>{activeCart.userId}</code>
             <button onClick={() => navigator.clipboard.writeText(activeCart.userId)} style={{ background: 'none', border: 'none', cursor: 'pointer', marginLeft: '4px' }}>📋</button>
