@@ -35,7 +35,7 @@ function App() {
   const lastAdminAction = useRef(0);
   const [activeTab, setActiveTab] = useState<Tab>('welcome');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [version] = useState('v1.1.20');
+  const [version] = useState('v1.1.21');
 
   // Default cart state
   const [defaultCartId, setDefaultCartId] = useState<string>('mine');
@@ -306,15 +306,20 @@ function App() {
             if (cloudCart.id === 'mine') return; // SIKKERHED: Ignorer altid den globale spøgelseskurv
 
             const idx = newCarts.findIndex(c => c.id === cloudCart.id);
-            const formattedCart: CartProfile = {
+            const formattedCart: any = {
               id: cloudCart.id,
               name: cloudCart.name,
               userId: cloudCart.owner_id,
-              items: [], // Items hentes separat herunder
               ...cloudCart.config
             };
-            if (idx === -1) newCarts.push(formattedCart);
-            else newCarts[idx] = { ...newCarts[idx], ...formattedCart };
+            if (idx === -1) {
+              formattedCart.items = []; // Kun [] hvis kurven er splinterny
+              newCarts.push(formattedCart as CartProfile);
+            }
+            else {
+              const existingItems = newCarts[idx].items;
+              newCarts[idx] = { ...newCarts[idx], ...formattedCart, items: existingItems };
+            }
           });
           return newCarts;
         });
@@ -428,7 +433,15 @@ function App() {
       handleSync(); // Kør straks
     }
     const interval = setInterval(() => {
-      handleSync();
+      // Fang slettede varer der har udløbet deres 3-sekunders timer, 
+      // men hvor auto-pushed 'delay' muligvis blev annulleret af user action.
+      const itemsToDelete = [...deletedItemsQueue.current];
+      if (itemsToDelete.length > 0) {
+        deletedItemsQueue.current = [];
+        handleSync({ deletedItems: itemsToDelete });
+      } else {
+        handleSync();
+      }
     }, 10000);
     return () => clearInterval(interval);
   }, [userStatus, handleSync]);
