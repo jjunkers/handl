@@ -35,7 +35,7 @@ function App() {
   const lastAdminAction = useRef(0);
   const [activeTab, setActiveTab] = useState<Tab>('welcome');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [version] = useState('v1.1.12');
+  const [version] = useState('v1.1.13');
 
   // Default cart state
   const [defaultCartId, setDefaultCartId] = useState<string>('mine');

@@ -123,9 +123,26 @@ export const onRequestPost: PagesFunction<Env> = async (context: any) => {
 
         // Slet enkelte varer
         for (const itemId of (deletedItems || [])) {
-            // Tjek ejerskab eller admin før sletning
-            const item = await context.env.DB.prepare("SELECT user_id FROM cart_items WHERE id = ?").bind(itemId).first() as any;
-            if (isAdmin || !item || item.user_id === userId || item.user_id === `private_${userId}`) {
+            // Hent varen for at tjekke rettigheder
+            const item = await context.env.DB.prepare("SELECT user_id, cart_id FROM cart_items WHERE id = ?").bind(itemId).first() as any;
+            if (!item) continue;
+
+            const isItemOwner = item.user_id === userId || item.user_id === `private_${userId}`;
+            let isCartOwner = false;
+            let isSubscriber = false;
+
+            if (!isItemOwner && !isAdmin) {
+                const cart = await context.env.DB.prepare("SELECT owner_id FROM carts WHERE id = ?").bind(item.cart_id).first() as any;
+                if (cart) {
+                    isCartOwner = cart.owner_id === userId || cart.owner_id === `private_${userId}`;
+                    if (!isCartOwner) {
+                        const sub = await context.env.DB.prepare("SELECT 1 FROM user_connections WHERE follower_id = ? AND followed_id = ?").bind(userId, cart.owner_id.replace('private_', '')).first();
+                        isSubscriber = !!sub;
+                    }
+                }
+            }
+
+            if (isAdmin || isItemOwner || isCartOwner || isSubscriber) {
                 statements.push(
                     context.env.DB.prepare("DELETE FROM cart_items WHERE id = ?").bind(itemId)
                 );
