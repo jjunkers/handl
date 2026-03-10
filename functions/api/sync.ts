@@ -123,15 +123,14 @@ export const onRequestPost: PagesFunction<Env> = async (context: any) => {
 
         // Slet enkelte varer
         for (const itemId of (deletedItems || [])) {
-            // Hent varen for at tjekke rettigheder
-            const item = await context.env.DB.prepare("SELECT user_id, cart_id FROM cart_items WHERE id = ?").bind(itemId).first() as any;
+            // Hent varen for at tjekke rettigheder (vi tjekker ud fra kurvens ejer)
+            const item = await context.env.DB.prepare("SELECT cart_id FROM cart_items WHERE id = ?").bind(itemId).first() as any;
             if (!item) continue;
 
-            const isItemOwner = item.user_id === userId || item.user_id === `private_${userId}`;
             let isCartOwner = false;
             let isSubscriber = false;
 
-            if (!isItemOwner && !isAdmin) {
+            if (!isAdmin) {
                 const cart = await context.env.DB.prepare("SELECT owner_id FROM carts WHERE id = ?").bind(item.cart_id).first() as any;
                 if (cart) {
                     isCartOwner = cart.owner_id === userId || cart.owner_id === `private_${userId}`;
@@ -142,7 +141,7 @@ export const onRequestPost: PagesFunction<Env> = async (context: any) => {
                 }
             }
 
-            if (isAdmin || isItemOwner || isCartOwner || isSubscriber) {
+            if (isAdmin || isCartOwner || isSubscriber) {
                 statements.push(
                     context.env.DB.prepare("DELETE FROM cart_items WHERE id = ?").bind(itemId)
                 );
